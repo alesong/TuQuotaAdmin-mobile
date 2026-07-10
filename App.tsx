@@ -9,7 +9,7 @@ import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { NavigationContainer } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Constants from 'expo-constants';
-import { AuthProvider, AlertProvider, initializeConfig, registerAssets, registerForPushNotificationsAsync, setStorageProvider, setupNotificationHandler, addNotificationResponseListener } from './src/index';
+import { AuthProvider, AlertProvider, initializeConfig, registerAssets, registerForPushNotificationsAsync, setStorageProvider, setupNotificationHandler, addNotificationResponseListener, DoorbellProvider } from './src/index';
 import { navigationRef } from './src/navigation/RootNavigation';
 import { AppNavigator } from './src/navigation/AppNavigator';
 
@@ -64,11 +64,13 @@ export default function App() {
       <SafeAreaView style={styles.container} edges={['bottom']}>
         <StatusBar style="auto" />
         <AuthProvider>
+          <DoorbellProvider>
           <AlertProvider>
             <NavigationContainer ref={navigationRef}>
               <AppNavigator />
             </NavigationContainer>
           </AlertProvider>
+          </DoorbellProvider>
         </AuthProvider>
       </SafeAreaView>
     </SafeAreaProvider>

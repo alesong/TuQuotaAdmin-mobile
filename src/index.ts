@@ -5,6 +5,7 @@ export { Assets, registerAssets } from './constants/Assets';
 
 export { AuthProvider, useAuth } from './context/AuthContext';
 export { AlertProvider, useAlert } from './context/AlertContext';
+export { DoorbellProvider, useDoorbell } from './context/DoorbellContext';
 
 export { AlertModal } from './components/AlertModal';
 export type { AlertType, AlertButton } from './components/AlertModal';

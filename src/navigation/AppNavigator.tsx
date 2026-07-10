@@ -1,5 +1,5 @@
 import React from 'react';
-import { createStackNavigator } from '@react-navigation/stack';
+import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import {
   LoginScreen,
   HomeScreen,
@@ -19,7 +19,7 @@ import {
   useAuth,
 } from '../index';
 
-const Stack = createStackNavigator();
+const Stack = createNativeStackNavigator();
 
 export const AppNavigator = () => {
     const { user, loading } = useAuth();
@@ -29,11 +29,10 @@ export const AppNavigator = () => {
     }
 
     return (
-        <>
             <Stack.Navigator
                 screenOptions={{
                     headerShown: false,
-                    cardStyle: { backgroundColor: '#ffffff' }
+                    contentStyle: { backgroundColor: '#ffffff' }
                 }}
             >
                 {user ? (
@@ -59,6 +58,5 @@ export const AppNavigator = () => {
                     </>
                 )}
             </Stack.Navigator>
-        </>
     );
 };

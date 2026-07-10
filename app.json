@@ -36,12 +36,21 @@
         {
           "icon": "./assets/notification-icon.png",
           "color": "#6366f1",
-          "sounds": ["./assets/sounds/doorbell.wav"]
+          "sounds": [
+            "./assets/sounds/doorbell.wav"
+          ]
         }
       ]
     ],
     "extra": {
-      "GOOGLE_CLIENT_ID": "63821075425-mme1ilbpmndv2dla9p6e4jkv6981mrej.apps.googleusercontent.com"
+      "GOOGLE_CLIENT_ID": "63821075425-mme1ilbpmndv2dla9p6e4jkv6981mrej.apps.googleusercontent.com",
+      "expo-navigation-bar": {
+        "enforceContrast": false,
+        "style": "light"
+      },
+      "eas": {
+        "projectId": "f0d5303a-8cc9-4d2a-ae51-7a7ebf190995"
+      }
     }
   }
 }

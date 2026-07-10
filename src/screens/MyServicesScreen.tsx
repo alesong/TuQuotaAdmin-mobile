@@ -34,9 +34,7 @@ import { Colors } from '../constants/Colors';
 import { Config } from '../constants/Config';
 import { useAuth } from '../context/AuthContext';
 import { AlertModal } from '../components/AlertModal';
-import { playDoorbellSound } from '../utils/sounds';
-import { registerBackgroundDoorbellTask, unregisterBackgroundDoorbellTask } from '../services/DoorbellBackgroundService';
-import { useDoorbellWS } from '../hooks/useDoorbellWS';
+import { useDoorbell } from '../context/DoorbellContext';
 import { toDataURL } from 'qrcode';
 
 export const MyServicesScreen = ({ navigation }: any) => {
@@ -56,10 +54,6 @@ export const MyServicesScreen = ({ navigation }: any) => {
     const [qrCountdown, setQrCountdown] = useState<number>(0);
     const [selectedServiceForQr, setSelectedServiceForQr] = useState<string>('');
     const [qrImageUrl, setQrImageUrl] = useState<string | null>(null);
-
-    // Doorbell states
-    const [doorbellUrl, setDoorbellUrl] = useState<string | null>(null);
-    const [showDoorbellAlert, setShowDoorbellAlert] = useState(false);
 
     // BBQ states
     const [bbqBookings, setBbqBookings] = useState<any[]>([]);
@@ -105,10 +99,6 @@ export const MyServicesScreen = ({ navigation }: any) => {
                 if (qrService) {
                     setSelectedServiceForQr(qrService.serviceId);
                 }
-
-                // Extraer URL del WebSocket Doorbell
-                const doorbellService = data.find((s: any) => s.provider === 'Doorbell' && s.wsUrl);
-                setDoorbellUrl(doorbellService?.wsUrl || null);
             }
         } catch (error) {
             console.error('Error fetching resident services:', error);
@@ -118,37 +108,7 @@ export const MyServicesScreen = ({ navigation }: any) => {
     };
     fetchMyServicesRef.current = fetchMyServices;
 
-    const handleDoorbellRing = useCallback(() => {
-        playDoorbellSound();
-        setShowDoorbellAlert(true);
-        setTimeout(() => setShowDoorbellAlert(false), 4000);
-        // Disparar push notification al servidor para todos los residentes
-        const doorbellService = services.find((s: any) => s.provider === 'Doorbell');
-        if (doorbellService && token) {
-            fetch(`${API_URL}/resident-services/doorbell/ring`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`,
-                },
-                body: JSON.stringify({ serviceId: doorbellService.serviceId }),
-            }).catch(() => {});
-        }
-    }, [services, token]);
-
-    const { connected: doorbellConnected } = useDoorbellWS({
-        url: doorbellUrl,
-        onRing: handleDoorbellRing,
-    });
-
-    useEffect(() => {
-        if (doorbellUrl) {
-            registerBackgroundDoorbellTask(doorbellUrl);
-        }
-        return () => {
-            unregisterBackgroundDoorbellTask();
-        };
-    }, [doorbellUrl]);
+    const { connected: doorbellConnected, showAlert: showDoorbellAlert, triggerRing: handleDoorbellRing, doorbellUrl } = useDoorbell();
 
     const fetchBbqAvailability = async () => {
         try {
@@ -446,13 +406,6 @@ export const MyServicesScreen = ({ navigation }: any) => {
                             <Text style={styles.testDoorbellBtnText}>Probar</Text>
                         </TouchableOpacity>
                     </View>
-                </View>
-            )}
-
-            {showDoorbellAlert && (
-                <View style={styles.doorbellAlert}>
-                    <Bell size={22} color="#fff" />
-                    <Text style={styles.doorbellAlertText}>¡Alguien está en la puerta!</Text>
                 </View>
             )}
 
@@ -1136,24 +1089,5 @@ const styles = StyleSheet.create({
         fontSize: 11,
         fontWeight: '700',
         color: '#6366f1',
-    },
-    doorbellAlert: {
-        position: 'absolute',
-        top: 0,
-        left: 0,
-        right: 0,
-        zIndex: 100,
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'center',
-        gap: 8,
-        paddingVertical: 14,
-        paddingHorizontal: 20,
-        backgroundColor: '#6366f1',
-    },
-    doorbellAlertText: {
-        fontSize: 15,
-        fontWeight: '700',
-        color: '#fff',
     },
 });
