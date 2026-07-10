@@ -1,6 +1,12 @@
 {
   "extends": "expo/tsconfig.base",
   "compilerOptions": {
-    "strict": true
+    "strict": true,
+    "ignoreDeprecations": "6.0",
+    "baseUrl": ".",
+    "paths": {
+      "browser-image-compression": ["./src/stubs/browser-image-compression.ts"],
+      "react-easy-crop": ["./src/stubs/react-easy-crop.tsx"]
+    }
   }
 }

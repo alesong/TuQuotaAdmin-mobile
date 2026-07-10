@@ -1,15 +1,17 @@
 {
   "expo": {
-    "name": "TuQuotaAdmin-mobile",
-    "slug": "TuQuotaAdmin-mobile",
+    "name": "TuQuotaAdmin",
+    "slug": "tuquotaadmin-mobile",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.sigpaur.tuquotaadmin"
     },
     "android": {
+      "package": "com.sigpaur.tuquotaadmin",
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/android-icon-foreground.png",
@@ -20,6 +22,18 @@
     },
     "web": {
       "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+    [
+      "expo-navigation-bar",
+      {
+        "enforceContrast": false,
+        "style": "light"
+      }
+    ]
+  ],
+    "extra": {
+      "GOOGLE_CLIENT_ID": "63821075425-mme1ilbpmndv2dla9p6e4jkv6981mrej.apps.googleusercontent.com"
     }
   }
 }
