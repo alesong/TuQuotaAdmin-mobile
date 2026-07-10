@@ -30,7 +30,12 @@ import {
     WifiOff,
     Bell,
 } from 'lucide-react-native';
-import { Colors, Config, useAuth, AlertModal, playDoorbellSound } from '../index';
+import { Colors } from '../constants/Colors';
+import { Config } from '../constants/Config';
+import { useAuth } from '../context/AuthContext';
+import { AlertModal } from '../components/AlertModal';
+import { playDoorbellSound } from '../utils/sounds';
+import { registerBackgroundDoorbellTask, unregisterBackgroundDoorbellTask } from '../services/DoorbellBackgroundService';
 import { useDoorbellWS } from '../hooks/useDoorbellWS';
 import { toDataURL } from 'qrcode';
 
@@ -135,6 +140,15 @@ export const MyServicesScreen = ({ navigation }: any) => {
         url: doorbellUrl,
         onRing: handleDoorbellRing,
     });
+
+    useEffect(() => {
+        if (doorbellUrl) {
+            registerBackgroundDoorbellTask(doorbellUrl);
+        }
+        return () => {
+            unregisterBackgroundDoorbellTask();
+        };
+    }, [doorbellUrl]);
 
     const fetchBbqAvailability = async () => {
         try {

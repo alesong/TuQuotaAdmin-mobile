@@ -1,13 +1,17 @@
-import { useEffect } from 'react';
-import { View, StyleSheet } from 'react-native';
+import { useEffect, useRef } from 'react';
+import { View, StyleSheet, LogBox } from 'react-native';
+
+LogBox.ignoreLogs([
+  'InteractionManager has been deprecated',
+]);
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { NavigationContainer } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Constants from 'expo-constants';
-import { AuthProvider, AlertProvider, initializeConfig, registerAssets, registerForPushNotificationsAsync, setStorageProvider } from './src/index';
-import { AppNavigator } from './src/navigation/AppNavigator';
+import { AuthProvider, AlertProvider, initializeConfig, registerAssets, registerForPushNotificationsAsync, setStorageProvider, setupNotificationHandler, addNotificationResponseListener } from './src/index';
 import { navigationRef } from './src/navigation/RootNavigation';
+import { AppNavigator } from './src/navigation/AppNavigator';
 
 console.log("Iniciando App.tsx");
 
@@ -29,19 +33,38 @@ setStorageProvider(AsyncStorage);
 
 export default function App() {
   console.log("Rendering App");
+  const notificationListener = useRef<{ remove: () => void } | null>(null);
+
   useEffect(() => {
-    // registerForPushNotificationsAsync(); // Comentada
-    console.log("App iniciado");
+    setupNotificationHandler();
+
+    registerForPushNotificationsAsync().then(token => {
+      if (token) {
+        console.log('Push token registered');
+      }
+    });
+
+    notificationListener.current = addNotificationResponseListener(response => {
+      const data = response.notification?.request?.content?.data;
+      if (data?.type === 'doorbell') {
+        const navigate = navigationRef.current?.navigate;
+        if (navigate && data.url) {
+          navigate('MyServices' as any);
+        }
+      }
+    });
+
+    return () => {
+      notificationListener.current?.remove();
+    };
   }, []);
 
   return (
     <SafeAreaProvider>
       <SafeAreaView style={styles.container} edges={['bottom']}>
         <StatusBar style="auto" />
-        {console.log("Rendering Providers")}
         <AuthProvider>
           <AlertProvider>
-            {console.log("Rendering Navigation")}
             <NavigationContainer ref={navigationRef}>
               <AppNavigator />
             </NavigationContainer>

@@ -15,13 +15,12 @@ export { CondoSelectorModal } from './components/CondoSelectorModal';
 
 export { default as api, setStorageProvider, getStorage } from './lib/api';
 export { initAnalytics, trackPageView, trackEvent } from './lib/analytics';
-export { registerForPushNotificationsAsync, updateAppBadge } from './lib/notifications';
+export { registerForPushNotificationsAsync, updateAppBadge, setupNotificationHandler, addNotificationResponseListener } from './lib/notifications';
 
 export { playDoorbellSound } from './utils/sounds';
 
 export { useDoorbellWS } from './hooks/useDoorbellWS';
 export {
-  BACKGROUND_WEBSOCKET_TASK,
   registerBackgroundDoorbellTask,
   unregisterBackgroundDoorbellTask,
 } from './services/DoorbellBackgroundService';

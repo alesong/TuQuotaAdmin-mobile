@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "39320229944",
+    "project_id": "tuquotaadmin-d4fba",
+    "storage_bucket": "tuquotaadmin-d4fba.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:39320229944:android:fab0006bfed880071b6ecd",
+        "android_client_info": {
+          "package_name": "com.tuquotaadmin.propietarios"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCCBSf4kvH5kcmohr1VyD2r-It3TfP1BbA"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

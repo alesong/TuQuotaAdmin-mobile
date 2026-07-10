@@ -1,25 +1,10 @@
-import * as TaskManager from 'expo-task-manager';
 import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
-
-export const BACKGROUND_WEBSOCKET_TASK = 'BACKGROUND_DOORBELL_WS';
 
 let bgWs: WebSocket | null = null;
 let bgReconnectTimer: ReturnType<typeof setTimeout> | null = null;
 let bgReconnectAttempts = 0;
 let bgUrl: string | null = null;
-
-TaskManager.defineTask(BACKGROUND_WEBSOCKET_TASK, async ({ data, error }) => {
-  if (error) {
-    console.error('[Background Doorbell] Task error:', error);
-    return;
-  }
-
-  const taskData = data as { url?: string } | undefined;
-  if (taskData?.url) {
-    startBackgroundWs(taskData.url);
-  }
-});
 
 function startBackgroundWs(url: string) {
   if (bgUrl === url && bgWs && bgWs.readyState === WebSocket.OPEN) return;
@@ -87,14 +72,9 @@ function stopBackgroundWs() {
 
 export async function registerBackgroundDoorbellTask(url: string) {
   if (Platform.OS === 'web') return;
-
   startBackgroundWs(url);
 }
 
 export async function unregisterBackgroundDoorbellTask() {
   stopBackgroundWs();
-  const isRegistered = await TaskManager.isTaskRegisteredAsync(BACKGROUND_WEBSOCKET_TASK);
-  if (isRegistered) {
-    await TaskManager.unregisterTaskAsync(BACKGROUND_WEBSOCKET_TASK);
-  }
 }
