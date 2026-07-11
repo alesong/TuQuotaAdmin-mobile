@@ -8,10 +8,11 @@
     "userInterfaceStyle": "light",
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.sigpaur.tuquotaadmin"
+      "bundleIdentifier": "com.tuquotaadmin"
     },
     "android": {
-      "package": "com.sigpaur.tuquotaadmin",
+      "googleServicesFile": "./google-services.json",
+      "package": "com.tuquotaadmin",
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/android-icon-foreground.png",
@@ -24,6 +25,7 @@
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
+      "@react-native-google-signin/google-signin",
       [
         "expo-navigation-bar",
         {

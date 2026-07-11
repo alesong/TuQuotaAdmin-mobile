@@ -1,21 +1,30 @@
 {
   "project_info": {
-    "project_number": "39320229944",
-    "project_id": "tuquotaadmin-d4fba",
-    "storage_bucket": "tuquotaadmin-d4fba.firebasestorage.app"
+    "project_number": "63821075425",
+    "project_id": "project-ea2772ad-ed15-498f-a85",
+    "storage_bucket": ""
   },
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:39320229944:android:fab0006bfed880071b6ecd",
+        "mobilesdk_app_id": "1:63821075425:android:fab0006bfed880071b6ecd",
         "android_client_info": {
-          "package_name": "com.tuquotaadmin.propietarios"
+          "package_name": "com.tuquotaadmin"
         }
       },
-      "oauth_client": [],
+      "oauth_client": [
+        {
+          "client_id": "63821075425-lojfpruein22j1gvj2j8ba847u7gjqb3.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.tuquotaadmin",
+            "certificate_hash": "5e8f16062ea3cd2c4a0d547876baa6f38cabf625"
+          }
+        }
+      ],
       "api_key": [
         {
-          "current_key": "AIzaSyCCBSf4kvH5kcmohr1VyD2r-It3TfP1BbA"
+          "current_key": "AIzaSyCZXnRAgklHBub7bciKLCNIswFLPKGVLQY"
         }
       ],
       "services": {
