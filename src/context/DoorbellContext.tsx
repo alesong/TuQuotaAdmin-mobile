@@ -2,24 +2,20 @@ import React, { createContext, useState, useEffect, useCallback, useRef, useCont
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { Bell, X } from 'lucide-react-native';
 import { Config } from '../constants/Config';
-import { useDoorbellWS } from '../hooks/useDoorbellWS';
-import { playDoorbellSound } from '../utils/sounds';
-import { registerBackgroundDoorbellTask, unregisterBackgroundDoorbellTask } from '../services/DoorbellBackgroundService';
 import { useAuth } from './AuthContext';
+import * as Notifications from 'expo-notifications';
 
 interface DoorbellContextType {
   connected: boolean;
   showAlert: boolean;
-  doorbellUrl: string | null;
   doorbellServiceId: string | null;
   triggerRing: () => void;
   dismissAlert: () => void;
 }
 
 const DoorbellContext = createContext<DoorbellContextType>({
-  connected: false,
+  connected: true,
   showAlert: false,
-  doorbellUrl: null,
   doorbellServiceId: null,
   triggerRing: () => {},
   dismissAlert: () => {},
@@ -27,14 +23,12 @@ const DoorbellContext = createContext<DoorbellContextType>({
 
 export function DoorbellProvider({ children }: { children: React.ReactNode }) {
   const { token } = useAuth();
-  const [doorbellUrl, setDoorbellUrl] = useState<string | null>(null);
   const [doorbellServiceId, setDoorbellServiceId] = useState<string | null>(null);
   const [showAlert, setShowAlert] = useState(false);
   const alertTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     if (!token) {
-      setDoorbellUrl(null);
       setDoorbellServiceId(null);
       return;
     }
@@ -50,7 +44,6 @@ export function DoorbellProvider({ children }: { children: React.ReactNode }) {
         if (cancelled) return;
         const arr = Array.isArray(data) ? data : [];
         const doorbellService = arr.find((s: any) => s.provider === 'Doorbell');
-        setDoorbellUrl(doorbellService?.wsUrl || null);
         setDoorbellServiceId(doorbellService?.serviceId || null);
       })
       .catch(() => {});
@@ -58,12 +51,22 @@ export function DoorbellProvider({ children }: { children: React.ReactNode }) {
     return () => { cancelled = true; };
   }, [token]);
 
-  const handleRing = useCallback(() => {
-    playDoorbellSound();
-    setShowAlert(true);
-    if (alertTimerRef.current) clearTimeout(alertTimerRef.current);
-    alertTimerRef.current = setTimeout(() => setShowAlert(false), 30000);
+  useEffect(() => {
+    const subscription = Notifications.addNotificationReceivedListener(notification => {
+      const data = notification.request.content.data;
+      if (data?.type === 'doorbell') {
+        setShowAlert(true);
+        if (alertTimerRef.current) clearTimeout(alertTimerRef.current);
+        alertTimerRef.current = setTimeout(() => setShowAlert(false), 30000);
+      }
+    });
 
+    return () => {
+      subscription.remove();
+    };
+  }, []);
+
+  const handleRing = useCallback(() => {
     if (doorbellServiceId && token) {
       fetch(`${Config.API_URL}/resident-services/doorbell/ring`, {
         method: 'POST',
@@ -71,24 +74,10 @@ export function DoorbellProvider({ children }: { children: React.ReactNode }) {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`,
         },
-        body: JSON.stringify({ serviceId: doorbellServiceId }),
+        body: JSON.stringify({ service_id: doorbellServiceId }),
       }).catch(() => {});
     }
   }, [doorbellServiceId, token]);
-
-  const { connected } = useDoorbellWS({
-    url: doorbellUrl,
-    onRing: handleRing,
-  });
-
-  useEffect(() => {
-    if (doorbellUrl) {
-      registerBackgroundDoorbellTask(doorbellUrl);
-    }
-    return () => {
-      unregisterBackgroundDoorbellTask();
-    };
-  }, [doorbellUrl]);
 
   const dismissAlert = useCallback(() => {
     setShowAlert(false);
@@ -97,7 +86,7 @@ export function DoorbellProvider({ children }: { children: React.ReactNode }) {
 
   return (
     <DoorbellContext.Provider
-      value={{ connected, showAlert, doorbellUrl, doorbellServiceId, triggerRing: handleRing, dismissAlert }}
+      value={{ connected: true, showAlert, doorbellServiceId, triggerRing: handleRing, dismissAlert }}
     >
       {children}
       {showAlert && (

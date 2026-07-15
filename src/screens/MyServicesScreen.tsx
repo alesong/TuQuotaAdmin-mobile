@@ -27,7 +27,6 @@ import {
     Info,
     Zap,
     Wifi,
-    WifiOff,
     Bell,
 } from 'lucide-react-native';
 import { Colors } from '../constants/Colors';
@@ -108,7 +107,7 @@ export const MyServicesScreen = ({ navigation }: any) => {
     };
     fetchMyServicesRef.current = fetchMyServices;
 
-    const { connected: doorbellConnected, showAlert: showDoorbellAlert, triggerRing: handleDoorbellRing, doorbellUrl } = useDoorbell();
+    const { connected: doorbellConnected, showAlert: showDoorbellAlert, triggerRing: handleDoorbellRing, doorbellServiceId } = useDoorbell();
 
     const fetchBbqAvailability = async () => {
         try {
@@ -384,20 +383,11 @@ export const MyServicesScreen = ({ navigation }: any) => {
                 ))}
             </ScrollView>
 
-            {doorbellUrl && (
+            {doorbellServiceId && (
                 <View style={styles.doorbellStatusBar}>
                     <View style={styles.doorbellStatusRow}>
-                        {doorbellConnected ? (
-                            <>
-                                <Wifi size={14} color="#10b981" />
-                                <Text style={[styles.doorbellStatusText, { color: '#10b981' }]}>Timbre conectado</Text>
-                            </>
-                        ) : (
-                            <>
-                                <WifiOff size={14} color="#ef4444" />
-                                <Text style={[styles.doorbellStatusText, { color: '#ef4444' }]}>Timbre desconectado</Text>
-                            </>
-                        )}
+                        <Wifi size={14} color="#10b981" />
+                        <Text style={[styles.doorbellStatusText, { color: '#10b981' }]}>Timbre activo</Text>
                         <TouchableOpacity
                             style={styles.testDoorbellBtn}
                             onPress={handleDoorbellRing}

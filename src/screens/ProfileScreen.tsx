@@ -24,7 +24,8 @@ import {
     Edit2,
     Check,
     X,
-    Maximize
+    Maximize,
+    Bug
 } from 'lucide-react-native';
 import * as ImagePicker from 'expo-image-picker';
 import Cropper from 'react-easy-crop';
@@ -337,6 +338,7 @@ export const ProfileScreen = ({ navigation }: any) => {
                     <MenuItem icon={UserIcon} title="Información Personal" onPress={() => navigation.navigate('PersonalInfo')} />
                     <MenuItem icon={Settings} title="Configurar Viviendas" onPress={() => navigation.navigate('Settings')} />
                     <MenuItem icon={HelpCircle} title="Ayuda y Soporte" onPress={() => navigation.navigate('Support')} />
+                    <MenuItem icon={Bug} title="Depuración Push" onPress={() => navigation.navigate('DebugPushToken')} />
                 </View>
 
                 <View style={styles.section}>

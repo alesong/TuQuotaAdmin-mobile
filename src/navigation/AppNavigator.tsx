@@ -16,6 +16,7 @@ import {
   NotificationsScreen,
   ExpenseDetailScreen,
   MyServicesScreen,
+  DebugPushTokenScreen,
   useAuth,
 } from '../index';
 
@@ -49,6 +50,7 @@ export const AppNavigator = () => {
                         <Stack.Screen name="Notifications" component={NotificationsScreen} />
                         <Stack.Screen name="ExpenseDetail" component={ExpenseDetailScreen} />
                         <Stack.Screen name="MyServices" component={MyServicesScreen} />
+                        <Stack.Screen name="DebugPushToken" component={DebugPushTokenScreen} />
                     </>
                 ) : (
                     <>

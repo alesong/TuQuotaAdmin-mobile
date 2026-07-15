@@ -23,16 +23,35 @@ function urlBase64ToUint8Array(base64String: string) {
   return outputArray;
 }
 
-export async function registerForPushNotificationsAsync(projectId?: string) {
+export async function registerForPushNotificationsAsync(projectId?: string, userId?: string) {
   if (isExpoGo) {
     console.log('Skipping push notification registration in Expo Go');
     return null;
   }
 
+  if (Platform.OS === 'android') {
+    try {
+      await Notifications.setNotificationChannelAsync('default', {
+        name: 'default',
+        importance: Notifications.AndroidImportance.MAX,
+        vibrationPattern: [0, 250, 250, 250],
+        lightColor: '#6366f1',
+      });
+      await Notifications.setNotificationChannelAsync('doorbell', {
+        name: 'Timbre',
+        importance: Notifications.AndroidImportance.MAX,
+        vibrationPattern: [0, 500, 200, 500],
+        lightColor: '#6366f1',
+        sound: 'doorbell.wav',
+      });
+    } catch {
+      console.log('[Push Token] Could not create notification channels');
+    }
+  }
+
   const shouldSkip = await AsyncStorage.getItem(PUSH_SKIP_KEY);
   if (shouldSkip === 'true') {
-    console.log('[Push Token] Skipped (previously failed - Firebase not available)');
-    return null;
+    await AsyncStorage.removeItem(PUSH_SKIP_KEY);
   }
 
   if (Platform.OS === 'web') {
@@ -55,7 +74,7 @@ export async function registerForPushNotificationsAsync(projectId?: string) {
         applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY)
       });
       const token = JSON.stringify(subscription);
-      await api.patch('/users/push-token', { push_token: token });
+      await api.patch('/users/push-token', { user_id: userId, push_token: token });
       console.log('Real Web-Push subscription saved to backend');
       return token;
     } catch (error) {
@@ -67,26 +86,6 @@ export async function registerForPushNotificationsAsync(projectId?: string) {
   if (!Device.isDevice) {
     console.log('Push notifications require a physical device');
     return null;
-  }
-
-  if (Platform.OS === 'android') {
-    try {
-      await Notifications.setNotificationChannelAsync('default', {
-        name: 'default',
-        importance: Notifications.AndroidImportance.MAX,
-        vibrationPattern: [0, 250, 250, 250],
-        lightColor: '#6366f1',
-      });
-      await Notifications.setNotificationChannelAsync('doorbell', {
-        name: 'Timbre',
-        importance: Notifications.AndroidImportance.MAX,
-        vibrationPattern: [0, 500, 200, 500],
-        lightColor: '#6366f1',
-        sound: 'doorbell.wav',
-      });
-    } catch {
-      console.log('[Push Token] Could not create notification channels');
-    }
   }
 
   const { status: existingStatus } = await Notifications.getPermissionsAsync();
@@ -115,7 +114,7 @@ export async function registerForPushNotificationsAsync(projectId?: string) {
 
   if (token) {
     try {
-      await api.patch('/users/push-token', { push_token: token });
+      await api.patch('/users/push-token', { user_id: userId, push_token: token });
       console.log('Push token saved to backend');
     } catch (error) {
       console.error('Error saving push token to backend', error);

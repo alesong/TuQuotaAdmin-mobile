@@ -9,7 +9,7 @@ import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { NavigationContainer } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Constants from 'expo-constants';
-import { AuthProvider, AlertProvider, initializeConfig, registerAssets, registerForPushNotificationsAsync, setStorageProvider, setupNotificationHandler, addNotificationResponseListener, DoorbellProvider } from './src/index';
+import { AuthProvider, useAuth, AlertProvider, initializeConfig, registerAssets, registerForPushNotificationsAsync, setStorageProvider, setupNotificationHandler, addNotificationResponseListener, DoorbellProvider } from './src/index';
 import { navigationRef } from './src/navigation/RootNavigation';
 import { AppNavigator } from './src/navigation/AppNavigator';
 
@@ -31,18 +31,30 @@ registerAssets({
 
 setStorageProvider(AsyncStorage);
 
+function PushRegistration() {
+  const { user } = useAuth();
+  const registered = useRef(false);
+
+  useEffect(() => {
+    if (!user?.id || registered.current) return;
+    registered.current = true;
+
+    registerForPushNotificationsAsync(undefined, user.id).then(token => {
+      if (token) {
+        console.log('Push token registered for user', user.id);
+      }
+    });
+  }, [user?.id]);
+
+  return null;
+}
+
 export default function App() {
   console.log("Rendering App");
   const notificationListener = useRef<{ remove: () => void } | null>(null);
 
   useEffect(() => {
     setupNotificationHandler();
-
-    registerForPushNotificationsAsync().then(token => {
-      if (token) {
-        console.log('Push token registered');
-      }
-    });
 
     notificationListener.current = addNotificationResponseListener(response => {
       const data = response.notification?.request?.content?.data;
@@ -64,6 +76,7 @@ export default function App() {
       <SafeAreaView style={styles.container} edges={['bottom']}>
         <StatusBar style="auto" />
         <AuthProvider>
+          <PushRegistration />
           <DoorbellProvider>
           <AlertProvider>
             <NavigationContainer ref={navigationRef}>

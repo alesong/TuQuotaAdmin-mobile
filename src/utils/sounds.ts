@@ -3,25 +3,6 @@ import { Platform } from 'react-native';
 export async function playDoorbellSound() {
   if (Platform.OS === 'web') {
     playWebDoorbellSound();
-  } else {
-    await scheduleNotificationSound();
-  }
-}
-
-async function scheduleNotificationSound() {
-  try {
-    const Notifications = require('expo-notifications');
-    await Notifications.scheduleNotificationAsync({
-      content: {
-        title: '¡Alguien toca el timbre!',
-        body: 'Alguien está en la puerta.',
-        sound: 'doorbell.wav',
-        priority: Notifications.AndroidNotificationPriority.HIGH,
-      },
-      trigger: null,
-    });
-  } catch (e) {
-    console.error('Error playing notification sound:', e);
   }
 }
 
@@ -67,5 +48,3 @@ function playWebDoorbellSound() {
     console.error('Error playing web doorbell sound:', e);
   }
 }
-
-

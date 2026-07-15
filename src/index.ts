@@ -20,12 +20,6 @@ export { registerForPushNotificationsAsync, updateAppBadge, setupNotificationHan
 
 export { playDoorbellSound } from './utils/sounds';
 
-export { useDoorbellWS } from './hooks/useDoorbellWS';
-export {
-  registerBackgroundDoorbellTask,
-  unregisterBackgroundDoorbellTask,
-} from './services/DoorbellBackgroundService';
-
 export { LoginScreen } from './screens/LoginScreen';
 export { HomeScreen } from './screens/HomeScreen';
 export { RegisterScreen } from './screens/RegisterScreen';
@@ -41,3 +35,4 @@ export { SupportScreen } from './screens/SupportScreen';
 export { CondoDashboardScreen } from './screens/CondoDashboardScreen';
 export { ExpenseDetailScreen } from './screens/ExpenseDetailScreen';
 export { MyServicesScreen } from './screens/MyServicesScreen';
+export { DebugPushTokenScreen } from './screens/DebugPushTokenScreen';
