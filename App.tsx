@@ -25,8 +25,8 @@ initializeConfig({
 console.log("Configuración inicializada");
 
 registerAssets({
-  logoBig: require('./assets/icon.png'),
-  logoQ: require('./assets/icon.png'),
+  logoBig: require('./assets/logo_big.png'),
+  logoQ: require('./assets/logo_big.png'),
 });
 
 setStorageProvider(AsyncStorage);

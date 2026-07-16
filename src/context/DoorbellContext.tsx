@@ -52,17 +52,32 @@ export function DoorbellProvider({ children }: { children: React.ReactNode }) {
   }, [token]);
 
   useEffect(() => {
+    const dismissTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
     const subscription = Notifications.addNotificationReceivedListener(notification => {
       const data = notification.request.content.data;
       if (data?.type === 'doorbell') {
+        const identifier = notification.request.identifier;
+
         setShowAlert(true);
         if (alertTimerRef.current) clearTimeout(alertTimerRef.current);
         alertTimerRef.current = setTimeout(() => setShowAlert(false), 30000);
+
+        if (!dismissTimers.has(identifier)) {
+          dismissTimers.set(identifier, setTimeout(async () => {
+            try {
+              await Notifications.dismissNotificationAsync(identifier);
+            } catch {}
+            dismissTimers.delete(identifier);
+          }, 30000));
+        }
       }
     });
 
     return () => {
       subscription.remove();
+      dismissTimers.forEach(t => clearTimeout(t));
+      dismissTimers.clear();
     };
   }, []);
 
