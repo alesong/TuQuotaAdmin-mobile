@@ -677,6 +677,48 @@ export const MyServicesScreen = ({ navigation }: any) => {
                                 </View>
                             </View>
                         )}
+
+                        {/* ==========================================
+                            OTROS SERVICIOS (Categorías personalizadas)
+                           ========================================== */}
+                        {activeSection === 'all' && (
+                            (() => {
+                                const conocidas = ['ACCESS', 'CAMERAS', 'AMENITIES'];
+                                const otros = services.filter(s => !conocidas.includes(s.category));
+                                if (otros.length === 0) return null;
+                                return (
+                                    <View style={styles.otherSection}>
+                                        <Text style={styles.otherSectionTitle}>Otros Servicios</Text>
+                                        {otros.map(s => (
+                                            <View key={s.serviceId} style={styles.serviceCard}>
+                                                <View style={styles.cardHeader}>
+                                                    <View style={styles.cardHeaderTitleContainer}>
+                                                        <Text style={styles.cardTitle}>{s.serviceName}</Text>
+                                                        <Text style={styles.cardSubtitle}>
+                                                            {s.condominioName}
+                                                        </Text>
+                                                    </View>
+                                                    <View style={[styles.categoryBadge, { backgroundColor: (s.category_color || '#3B82F6') + '20' }]}>
+                                                        <View style={[styles.categoryDot, { backgroundColor: s.category_color || '#3B82F6' }]} />
+                                                        <Text style={[styles.categoryText, { color: s.category_color || '#3B82F6' }]}>
+                                                            {s.category_name || s.category}
+                                                        </Text>
+                                                    </View>
+                                                    <Text style={[styles.statusBadge, { color: getStatusColor(s.status) }]}>
+                                                        {getStatusText(s.status)}
+                                                    </Text>
+                                                </View>
+                                                <View style={styles.cardBody}>
+                                                    <Text style={styles.cardText}>
+                                                        {s.description || 'Sin descripción adicional.'}
+                                                    </Text>
+                                                </View>
+                                            </View>
+                                        ))}
+                                    </View>
+                                );
+                            })()
+                        )}
                     </>
                 )}
             </ScrollView>
@@ -1079,5 +1121,36 @@ const styles = StyleSheet.create({
         fontSize: 11,
         fontWeight: '700',
         color: '#6366f1',
+    },
+
+    // Other Services section
+    otherSection: {
+        marginTop: 8,
+    },
+    otherSectionTitle: {
+        fontSize: 16,
+        fontWeight: 'bold',
+        color: Colors.text,
+        marginBottom: 12,
+    },
+    categoryBadge: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingHorizontal: 8,
+        paddingVertical: 3,
+        borderRadius: 6,
+        marginRight: 8,
+    },
+    categoryDot: {
+        width: 6,
+        height: 6,
+        borderRadius: 3,
+        marginRight: 4,
+    },
+    categoryText: {
+        fontSize: 10,
+        fontWeight: 'bold',
+        textTransform: 'uppercase',
+        letterSpacing: 0.3,
     },
 });
