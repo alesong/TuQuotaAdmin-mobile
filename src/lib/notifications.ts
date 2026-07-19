@@ -88,10 +88,17 @@ export async function registerForPushNotificationsAsync(projectId?: string, user
     return null;
   }
 
+  const resolvedProjectId = projectId || Constants.expoConfig?.extra?.eas?.projectId;
   const { status: existingStatus } = await Notifications.getPermissionsAsync();
   let finalStatus = existingStatus;
   if (existingStatus !== 'granted') {
-    const { status } = await Notifications.requestPermissionsAsync();
+    const { status } = await Notifications.requestPermissionsAsync({
+      ios: {
+        allowAlert: true,
+        allowBadge: true,
+        allowSound: true,
+      },
+    });
     finalStatus = status;
   }
   if (finalStatus !== 'granted') {
@@ -102,7 +109,7 @@ export async function registerForPushNotificationsAsync(projectId?: string, user
   let token = null;
   try {
     const result = await Notifications.getExpoPushTokenAsync(
-      projectId ? { projectId } : {}
+      resolvedProjectId ? { projectId: resolvedProjectId } : {}
     );
     token = result.data;
     console.log('Push token:', token);
@@ -174,9 +181,10 @@ export async function updateAppBadge(count: number) {
 
 export async function getExpoPushToken(projectId?: string) {
   if (isExpoGo || !Device.isDevice) return null;
+  const resolvedProjectId = projectId || Constants.expoConfig?.extra?.eas?.projectId;
   try {
     const token = (await Notifications.getExpoPushTokenAsync(
-      projectId ? { projectId } : {}
+      resolvedProjectId ? { projectId: resolvedProjectId } : {}
     )).data;
     return token;
   } catch {

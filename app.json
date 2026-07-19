@@ -13,6 +13,9 @@
     "android": {
       "googleServicesFile": "./google-services.json",
       "package": "com.tuquotaadmin",
+      "permissions": [
+        "android.permission.POST_NOTIFICATIONS"
+      ],
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/android-icon-foreground.png",
@@ -41,6 +44,12 @@
           "sounds": [
             "./assets/sounds/doorbell.wav"
           ]
+        }
+      ],
+      [
+        "expo-audio",
+        {
+          "enableBackgroundPlayback": true
         }
       ]
     ],

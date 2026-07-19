@@ -15,7 +15,8 @@ import { AppNavigator } from './src/navigation/AppNavigator';
 
 console.log("Iniciando App.tsx");
 
-const { GOOGLE_CLIENT_ID } = Constants.expoConfig?.extra || {};
+const { GOOGLE_CLIENT_ID, eas } = Constants.expoConfig?.extra || {};
+const EAS_PROJECT_ID = eas?.projectId;
 
 initializeConfig({
   APP_NAME: 'TuQuota',
@@ -39,7 +40,7 @@ function PushRegistration() {
     if (!user?.id || registered.current) return;
     registered.current = true;
 
-    registerForPushNotificationsAsync(undefined, user.id).then(token => {
+    registerForPushNotificationsAsync(EAS_PROJECT_ID, user.id).then(token => {
       if (token) {
         console.log('Push token registered for user', user.id);
       }

@@ -4,6 +4,7 @@ import { Bell, X } from 'lucide-react-native';
 import { Config } from '../constants/Config';
 import { useAuth } from './AuthContext';
 import * as Notifications from 'expo-notifications';
+import { playDoorbellSound } from '../utils/sounds';
 
 interface DoorbellContextType {
   connected: boolean;
@@ -60,6 +61,7 @@ export function DoorbellProvider({ children }: { children: React.ReactNode }) {
         const identifier = notification.request.identifier;
 
         setShowAlert(true);
+        playDoorbellSound();
         if (alertTimerRef.current) clearTimeout(alertTimerRef.current);
         alertTimerRef.current = setTimeout(() => setShowAlert(false), 30000);
 
@@ -89,7 +91,7 @@ export function DoorbellProvider({ children }: { children: React.ReactNode }) {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`,
         },
-        body: JSON.stringify({ service_id: doorbellServiceId }),
+        body: JSON.stringify({ serviceId: doorbellServiceId }),
       }).catch(() => {});
     }
   }, [doorbellServiceId, token]);

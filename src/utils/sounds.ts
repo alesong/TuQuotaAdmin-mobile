@@ -1,8 +1,51 @@
 import { Platform } from 'react-native';
+import { createAudioPlayer, setAudioModeAsync } from 'expo-audio';
+import type { AudioPlayer } from 'expo-audio';
+
+let _player: AudioPlayer | null = null;
+let _releaseTimer: ReturnType<typeof setTimeout> | null = null;
+let _audioInit = false;
+
+async function ensureAudioInit() {
+  if (_audioInit) return;
+  _audioInit = true;
+  try {
+    await setAudioModeAsync({
+      playsInSilentMode: true,
+      shouldPlayInBackground: true,
+      interruptionMode: 'doNotMix',
+    });
+  } catch (e) {
+    console.error('Error initializing audio mode:', e);
+  }
+}
 
 export async function playDoorbellSound() {
   if (Platform.OS === 'web') {
     playWebDoorbellSound();
+    return;
+  }
+
+  try {
+    await ensureAudioInit();
+
+    if (_releaseTimer) clearTimeout(_releaseTimer);
+    if (_player) {
+      _player.remove();
+      _player = null;
+    }
+
+    _player = createAudioPlayer(require('../../assets/sounds/doorbell.wav'));
+    _player.play();
+
+    _releaseTimer = setTimeout(() => {
+      if (_player) {
+        _player.remove();
+        _player = null;
+      }
+    }, 5000);
+  } catch (e) {
+    console.error('Error playing doorbell sound:', e);
   }
 }
 
