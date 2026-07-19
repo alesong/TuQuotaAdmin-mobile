@@ -6,6 +6,12 @@ let _player: AudioPlayer | null = null;
 let _releaseTimer: ReturnType<typeof setTimeout> | null = null;
 let _audioInit = false;
 
+const SOUND_FILES: Record<string, any> = {
+  'doorbell.wav': require('../../assets/sounds/doorbell.wav'),
+  'doorbell_armonico.wav': require('../../assets/sounds/doorbell_armonico.wav'),
+  'doorbell_digital.wav': require('../../assets/sounds/doorbell_digital.wav'),
+};
+
 async function ensureAudioInit() {
   if (_audioInit) return;
   _audioInit = true;
@@ -20,7 +26,7 @@ async function ensureAudioInit() {
   }
 }
 
-export async function playDoorbellSound() {
+export async function playDoorbellSound(soundFile?: string) {
   if (Platform.OS === 'web') {
     playWebDoorbellSound();
     return;
@@ -35,7 +41,8 @@ export async function playDoorbellSound() {
       _player = null;
     }
 
-    _player = createAudioPlayer(require('../../assets/sounds/doorbell.wav'));
+    const source = SOUND_FILES[soundFile || 'doorbell.wav'] || SOUND_FILES['doorbell.wav'];
+    _player = createAudioPlayer(source);
     _player.play();
 
     _releaseTimer = setTimeout(() => {

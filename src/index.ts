@@ -13,6 +13,7 @@ export { Button } from './components/Button';
 export { Input } from './components/Input';
 export { Checkbox } from './components/Checkbox';
 export { CondoSelectorModal } from './components/CondoSelectorModal';
+export { DoorbellSettingsModal } from './components/DoorbellSettingsModal';
 
 export { default as api, setStorageProvider, getStorage } from './lib/api';
 export { initAnalytics, trackPageView, trackEvent } from './lib/analytics';

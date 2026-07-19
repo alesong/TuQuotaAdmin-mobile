@@ -42,7 +42,9 @@
           "icon": "./assets/notification-icon.png",
           "color": "#6366f1",
           "sounds": [
-            "./assets/sounds/doorbell.wav"
+            "./assets/sounds/doorbell.wav",
+            "./assets/sounds/doorbell_armonico.wav",
+            "./assets/sounds/doorbell_digital.wav"
           ]
         }
       ],

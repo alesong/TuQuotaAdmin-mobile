@@ -27,13 +27,14 @@ import {
     Info,
     Zap,
     Wifi,
-    Bell,
+    Settings,
 } from 'lucide-react-native';
 import { Colors } from '../constants/Colors';
 import { Config } from '../constants/Config';
 import { useAuth } from '../context/AuthContext';
 import { AlertModal } from '../components/AlertModal';
 import { useDoorbell } from '../context/DoorbellContext';
+import { DoorbellSettingsModal } from '../components/DoorbellSettingsModal';
 import { toDataURL } from 'qrcode';
 
 export const MyServicesScreen = ({ navigation }: any) => {
@@ -107,7 +108,8 @@ export const MyServicesScreen = ({ navigation }: any) => {
     };
     fetchMyServicesRef.current = fetchMyServices;
 
-    const { connected: doorbellConnected, showAlert: showDoorbellAlert, triggerRing: handleDoorbellRing, doorbellServiceId } = useDoorbell();
+    const { connected: doorbellConnected, showAlert: showDoorbellAlert, doorbellServiceId, preferences, updatePreferences } = useDoorbell();
+    const [showDoorbellSettings, setShowDoorbellSettings] = useState(false);
 
     const fetchBbqAvailability = async () => {
         try {
@@ -390,10 +392,9 @@ export const MyServicesScreen = ({ navigation }: any) => {
                         <Text style={[styles.doorbellStatusText, { color: '#10b981' }]}>Timbre activo</Text>
                         <TouchableOpacity
                             style={styles.testDoorbellBtn}
-                            onPress={handleDoorbellRing}
+                            onPress={() => setShowDoorbellSettings(true)}
                         >
-                            <Bell size={14} color="#6366f1" />
-                            <Text style={styles.testDoorbellBtnText}>Probar</Text>
+                            <Settings size={16} color="#6366f1" />
                         </TouchableOpacity>
                     </View>
                 </View>
@@ -733,6 +734,13 @@ export const MyServicesScreen = ({ navigation }: any) => {
                     onClose={() => setIsAlertVisible(false)}
                 />
             )}
+
+            <DoorbellSettingsModal
+                visible={showDoorbellSettings}
+                onClose={() => setShowDoorbellSettings(false)}
+                preferences={preferences}
+                onUpdate={updatePreferences}
+            />
         </View>
     );
 };
@@ -1109,18 +1117,12 @@ const styles = StyleSheet.create({
         flex: 1,
     },
     testDoorbellBtn: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 4,
-        paddingHorizontal: 10,
-        paddingVertical: 4,
+        width: 28,
+        height: 28,
         borderRadius: 6,
         backgroundColor: '#eef2ff',
-    },
-    testDoorbellBtnText: {
-        fontSize: 11,
-        fontWeight: '700',
-        color: '#6366f1',
+        alignItems: 'center',
+        justifyContent: 'center',
     },
 
     // Other Services section

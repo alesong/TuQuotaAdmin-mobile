@@ -26,11 +26,25 @@ function urlBase64ToUint8Array(base64String: string) {
 const CHANNEL_DEFAULT = 'default_v2';
 const CHANNEL_DOORBELL = 'doorbell_v2';
 
+const DOORBELL_PREFS_KEY = '@TuQuotaAdmin:doorbellPrefs';
+
 export async function ensureNotificationChannelsAsync() {
   if (Platform.OS !== 'android' || isExpoGo) return;
   try {
     await Notifications.deleteNotificationChannelAsync('default');
     await Notifications.deleteNotificationChannelAsync('doorbell');
+  } catch {}
+  let doorbellSound = 'doorbell.wav';
+  try {
+    const stored = await AsyncStorage.getItem(DOORBELL_PREFS_KEY);
+    if (stored) {
+      const parsed = JSON.parse(stored);
+      if (parsed.enabled === false) {
+        doorbellSound = 'default';
+      } else if (parsed.sound) {
+        doorbellSound = parsed.sound;
+      }
+    }
   } catch {}
   try {
     await Notifications.setNotificationChannelAsync(CHANNEL_DEFAULT, {
@@ -45,7 +59,7 @@ export async function ensureNotificationChannelsAsync() {
       importance: Notifications.AndroidImportance.MAX,
       vibrationPattern: [0, 500, 200, 500],
       lightColor: '#6366f1',
-      sound: 'doorbell.wav',
+      sound: doorbellSound,
     });
   } catch {
     console.log('Could not create notification channels');
