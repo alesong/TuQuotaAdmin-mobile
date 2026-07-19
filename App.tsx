@@ -62,7 +62,7 @@ export default function App() {
       if (data?.type === 'doorbell') {
         const navigate = navigationRef.current?.navigate;
         if (navigate && data.url) {
-          navigate('MyServices' as any);
+          navigate('MyServices' as any, { initialSection: 'cameras' });
         }
       }
     });

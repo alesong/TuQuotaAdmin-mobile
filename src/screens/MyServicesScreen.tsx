@@ -37,11 +37,17 @@ import { useDoorbell } from '../context/DoorbellContext';
 import { DoorbellSettingsModal } from '../components/DoorbellSettingsModal';
 import { toDataURL } from 'qrcode';
 
-export const MyServicesScreen = ({ navigation }: any) => {
+export const MyServicesScreen = ({ navigation, route }: any) => {
     const { token } = useAuth();
     const [loading, setLoading] = useState(false);
     const [services, setServices] = useState<any[]>([]);
     const [activeSection, setActiveSection] = useState<'all' | 'gate' | 'cameras' | 'qr' | 'bbq' | 'parking'>('all');
+
+    useEffect(() => {
+        if (route?.params?.initialSection) {
+            setActiveSection(route.params.initialSection);
+        }
+    }, [route?.params?.initialSection]);
 
     // Action/API states
     const [actionLoading, setActionLoading] = useState(false);
