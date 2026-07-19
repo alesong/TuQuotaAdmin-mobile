@@ -23,31 +23,42 @@ function urlBase64ToUint8Array(base64String: string) {
   return outputArray;
 }
 
+const CHANNEL_DEFAULT = 'default_v2';
+const CHANNEL_DOORBELL = 'doorbell_v2';
+
+export async function ensureNotificationChannelsAsync() {
+  if (Platform.OS !== 'android' || isExpoGo) return;
+  try {
+    await Notifications.deleteNotificationChannelAsync('default');
+    await Notifications.deleteNotificationChannelAsync('doorbell');
+  } catch {}
+  try {
+    await Notifications.setNotificationChannelAsync(CHANNEL_DEFAULT, {
+      name: 'General',
+      importance: Notifications.AndroidImportance.MAX,
+      vibrationPattern: [0, 250, 250, 250],
+      lightColor: '#6366f1',
+      sound: 'default',
+    });
+    await Notifications.setNotificationChannelAsync(CHANNEL_DOORBELL, {
+      name: 'Timbre',
+      importance: Notifications.AndroidImportance.MAX,
+      vibrationPattern: [0, 500, 200, 500],
+      lightColor: '#6366f1',
+      sound: 'doorbell.wav',
+    });
+  } catch {
+    console.log('Could not create notification channels');
+  }
+}
+
 export async function registerForPushNotificationsAsync(projectId?: string, userId?: string) {
   if (isExpoGo) {
     console.log('Skipping push notification registration in Expo Go');
     return null;
   }
 
-  if (Platform.OS === 'android') {
-    try {
-      await Notifications.setNotificationChannelAsync('default', {
-        name: 'default',
-        importance: Notifications.AndroidImportance.MAX,
-        vibrationPattern: [0, 250, 250, 250],
-        lightColor: '#6366f1',
-      });
-      await Notifications.setNotificationChannelAsync('doorbell', {
-        name: 'Timbre',
-        importance: Notifications.AndroidImportance.MAX,
-        vibrationPattern: [0, 500, 200, 500],
-        lightColor: '#6366f1',
-        sound: 'doorbell.wav',
-      });
-    } catch {
-      console.log('[Push Token] Could not create notification channels');
-    }
-  }
+  await ensureNotificationChannelsAsync();
 
   const shouldSkip = await AsyncStorage.getItem(PUSH_SKIP_KEY);
   if (shouldSkip === 'true') {
@@ -131,8 +142,10 @@ export async function registerForPushNotificationsAsync(projectId?: string, user
   return token;
 }
 
-export function setupNotificationHandler() {
+export async function setupNotificationHandler() {
   if (isExpoGo) return;
+
+  await ensureNotificationChannelsAsync();
 
   try {
     Notifications.setNotificationHandler({

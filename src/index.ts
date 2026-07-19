@@ -16,7 +16,7 @@ export { CondoSelectorModal } from './components/CondoSelectorModal';
 
 export { default as api, setStorageProvider, getStorage } from './lib/api';
 export { initAnalytics, trackPageView, trackEvent } from './lib/analytics';
-export { registerForPushNotificationsAsync, updateAppBadge, setupNotificationHandler, addNotificationResponseListener } from './lib/notifications';
+export { registerForPushNotificationsAsync, ensureNotificationChannelsAsync, updateAppBadge, setupNotificationHandler, addNotificationResponseListener } from './lib/notifications';
 
 export { playDoorbellSound } from './utils/sounds';
 
