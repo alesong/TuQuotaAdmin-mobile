@@ -37,11 +37,18 @@ import { useDoorbell } from '../context/DoorbellContext';
 import { DoorbellSettingsModal } from '../components/DoorbellSettingsModal';
 import { toDataURL } from 'qrcode';
 
+const AMENITY_CONFIG: Record<string, { label: string, searchTerm: string, subtitle: string }> = {
+    pool: { label: 'Piscina', searchTerm: 'PISCINA', subtitle: 'Acceso a piscina y zonas comunes' },
+    gym: { label: 'Gimnasio', searchTerm: 'GIMNASIO', subtitle: 'Acceso a gimnasio' },
+    bbq: { label: 'BBQ', searchTerm: 'BBQ', subtitle: 'Reservas y agenda de área social' },
+    salon: { label: 'Salón', searchTerm: 'SALÓN', subtitle: 'Reservas de salón de eventos' },
+};
+
 export const MyServicesScreen = ({ navigation, route }: any) => {
     const { token } = useAuth();
     const [loading, setLoading] = useState(false);
     const [services, setServices] = useState<any[]>([]);
-    const [activeSection, setActiveSection] = useState<'all' | 'gate' | 'cameras' | 'qr' | 'bbq' | 'parking'>('all');
+    const [activeSection, setActiveSection] = useState<'gate' | 'cameras' | 'pool' | 'gym' | 'bbq' | 'salon' | 'parking' | 'others'>('gate');
 
     useEffect(() => {
         if (route?.params?.initialSection) {
@@ -61,10 +68,13 @@ export const MyServicesScreen = ({ navigation, route }: any) => {
     const [selectedServiceForQr, setSelectedServiceForQr] = useState<string>('');
     const [qrImageUrl, setQrImageUrl] = useState<string | null>(null);
 
-    // BBQ states
-    const [bbqBookings, setBbqBookings] = useState<any[]>([]);
-    const [selectedBbqDate, setSelectedBbqDate] = useState('');
-    const [selectedBbqSlot, setSelectedBbqSlot] = useState('12:00 - 18:00');
+    // Amenity states (Piscina, Gimnasio, BBQ, Salón)
+    const [amenityData, setAmenityData] = useState<Record<string, { bookings: any[], selectedDate: string, selectedSlot: string }>>({
+        pool: { bookings: [], selectedDate: '', selectedSlot: '12:00 - 18:00' },
+        gym: { bookings: [], selectedDate: '', selectedSlot: '12:00 - 18:00' },
+        bbq: { bookings: [], selectedDate: '', selectedSlot: '12:00 - 18:00' },
+        salon: { bookings: [], selectedDate: '', selectedSlot: '12:00 - 18:00' },
+    });
 
     // Parking states
     const [vehicles, setVehicles] = useState<any[]>([]);
@@ -75,7 +85,7 @@ export const MyServicesScreen = ({ navigation, route }: any) => {
     const API_URL = Config.API_URL;
 
     const fetchMyServicesRef = useRef<(() => Promise<void>) | null>(null);
-    const fetchBbqAvailabilityRef = useRef<(() => Promise<void>) | null>(null);
+    const fetchAmenityAvailabilityRef = useRef<((type: string) => Promise<void>) | null>(null);
     const fetchVehiclesRef = useRef<(() => Promise<void>) | null>(null);
 
     const showAlert = (title: string, message: string, type: 'success' | 'error' | 'warning' = 'success') => {
@@ -117,9 +127,9 @@ export const MyServicesScreen = ({ navigation, route }: any) => {
     const { connected: doorbellConnected, showAlert: showDoorbellAlert, doorbellServiceId, preferences, updatePreferences } = useDoorbell();
     const [showDoorbellSettings, setShowDoorbellSettings] = useState(false);
 
-    const fetchBbqAvailability = async () => {
+    const fetchAmenityAvailability = async (type: string) => {
         try {
-            const response = await fetch(`${API_URL}/resident-services/bbq/availability`, {
+            const response = await fetch(`${API_URL}/resident-services/${type}/availability`, {
                 cache: 'no-cache',
                 headers: {
                     'Authorization': `Bearer ${token}`,
@@ -127,13 +137,13 @@ export const MyServicesScreen = ({ navigation, route }: any) => {
             });
             if (response.ok) {
                 const data = await response.json();
-                setBbqBookings(data);
+                setAmenityData(prev => ({ ...prev, [type]: { ...prev[type], bookings: data } }));
             }
         } catch (error) {
-            console.error('Error fetching BBQ:', error);
+            console.error(`Error fetching ${type} availability:`, error);
         }
     };
-    fetchBbqAvailabilityRef.current = fetchBbqAvailability;
+    fetchAmenityAvailabilityRef.current = fetchAmenityAvailability;
 
     const fetchVehicles = async () => {
         try {
@@ -156,10 +166,21 @@ export const MyServicesScreen = ({ navigation, route }: any) => {
     useFocusEffect(
         useCallback(() => {
             fetchMyServicesRef.current?.();
-            fetchBbqAvailabilityRef.current?.();
+            ['pool', 'gym', 'bbq', 'salon'].forEach(t => fetchAmenityAvailabilityRef.current?.(t));
             fetchVehiclesRef.current?.();
         }, [])
     );
+
+    // Preseleccionar servicio QR según pestaña activa
+    useEffect(() => {
+        if (['pool', 'gym', 'bbq', 'salon'].includes(activeSection)) {
+            const cfg = AMENITY_CONFIG[activeSection];
+            const match = services.find(s =>
+                s.category === 'AMENITIES' && s.serviceName.toUpperCase().includes(cfg.searchTerm)
+            );
+            if (match) setSelectedServiceForQr(match.serviceId);
+        }
+    }, [activeSection, services]);
 
     // Generar QR image cuando cambia qrCode
     useEffect(() => {
@@ -248,33 +269,34 @@ export const MyServicesScreen = ({ navigation, route }: any) => {
     };
 
     // ==========================================
-    // BBQ ACTION
+    // AMENITY RESERVATION ACTION
     // ==========================================
 
-    const handleReserveBbq = async (serviceId: string) => {
-        if (!selectedBbqDate) {
+    const handleReserveAmenity = async (type: string, serviceId: string) => {
+        const { selectedDate, selectedSlot } = amenityData[type] || {};
+        if (!selectedDate) {
             showAlert('Campo requerido', 'Por favor introduce una fecha (AAAA-MM-DD) para la reserva.', 'warning');
             return;
         }
         setActionLoading(true);
         try {
-            const response = await fetch(`${API_URL}/resident-services/bbq/reserve`, {
+            const response = await fetch(`${API_URL}/resident-services/${type}/reserve`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                     'Authorization': `Bearer ${token}`,
                 },
                 body: JSON.stringify({
-                    date: selectedBbqDate,
-                    timeSlot: selectedBbqSlot,
+                    date: selectedDate,
+                    timeSlot: selectedSlot,
                     serviceId,
                 }),
             });
             const data = await response.json();
             if (response.ok && data.success) {
-                showAlert('Reserva Creada', `Reserva confirmada para el BBQ el día ${data.date} en el horario ${data.timeSlot}.`, 'success');
-                setSelectedBbqDate('');
-                fetchBbqAvailability();
+                showAlert('Reserva Creada', `Reserva confirmada para ${AMENITY_CONFIG[type].label} el día ${data.date} en el horario ${data.timeSlot}.`, 'success');
+                setAmenityData(prev => ({ ...prev, [type]: { ...prev[type], selectedDate: '' } }));
+                fetchAmenityAvailability(type);
             } else {
                 showAlert('Error', data.message || 'No se pudo reservar en este momento.', 'error');
             }
@@ -373,19 +395,21 @@ export const MyServicesScreen = ({ navigation, route }: any) => {
 
             {/* Navigation tabs */}
             <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.tabsContainer} contentContainerStyle={styles.tabsContent}>
-                {(['all', 'gate', 'cameras', 'qr', 'bbq', 'parking'] as const).map(tab => (
+                {(['gate', 'cameras', 'pool', 'gym', 'bbq', 'salon', 'parking', 'others'] as const).map(tab => (
                     <TouchableOpacity
                         key={tab}
                         onPress={() => setActiveSection(tab)}
                         style={[styles.tabButton, activeTabStyle(activeSection === tab)]}
                     >
                         <Text style={[styles.tabButtonText, activeTabTextStyle(activeSection === tab)]}>
-                            {tab === 'all' && 'Todos'}
                             {tab === 'gate' && 'Portón'}
                             {tab === 'cameras' && 'Cámaras'}
-                            {tab === 'qr' && 'Código QR'}
+                            {tab === 'pool' && 'Piscina'}
+                            {tab === 'gym' && 'Gimnasio'}
                             {tab === 'bbq' && 'BBQ'}
+                            {tab === 'salon' && 'Salón'}
                             {tab === 'parking' && 'Parqueadero'}
+                            {tab === 'others' && 'Otros Servicios'}
                         </Text>
                     </TouchableOpacity>
                 ))}
@@ -422,7 +446,7 @@ export const MyServicesScreen = ({ navigation, route }: any) => {
                         {/* ==========================================
                             PORTON SECTION
                            ========================================== */}
-                        {(activeSection === 'all' || activeSection === 'gate') && (
+                        {activeSection === 'gate' && (
                             services.filter(s => s.category === 'ACCESS').map(s => (
                                 <View key={s.serviceId} style={styles.serviceCard}>
                                     <View style={styles.cardHeader}>
@@ -454,7 +478,7 @@ export const MyServicesScreen = ({ navigation, route }: any) => {
                         {/* ==========================================
                             CAMERAS SECTION
                            ========================================== */}
-                        {(activeSection === 'all' || activeSection === 'cameras') && (
+                        {activeSection === 'cameras' && (
                             services.filter(s => s.category === 'CAMERAS').map(s => (
                                 <View key={s.serviceId} style={styles.serviceCard}>
                                     <View style={styles.cardHeader}>
@@ -488,142 +512,117 @@ export const MyServicesScreen = ({ navigation, route }: any) => {
                         )}
 
                         {/* ==========================================
-                            QR ACCESOS SECTION
+                            AMENITY SECTIONS (Piscina, Gimnasio, BBQ, Salón)
                            ========================================== */}
-                        {(activeSection === 'all' || activeSection === 'qr') && (
-                            <View style={styles.serviceCard}>
-                                <View style={styles.cardHeader}>
-                                    <Smartphone size={22} color={Colors.primary} />
-                                    <View style={styles.cardHeaderTitleContainer}>
-                                        <Text style={styles.cardTitle}>Código QR de Acceso</Text>
-                                        <Text style={styles.cardSubtitle}>Piscina, Gimnasio y zonas comunes</Text>
+                        {(['pool', 'gym', 'bbq', 'salon'] as const).map(type => {
+                            if (activeSection !== type) return null;
+                            const cfg = AMENITY_CONFIG[type];
+                            const ad = amenityData[type] || { bookings: [], selectedDate: '', selectedSlot: '12:00 - 18:00' };
+                            const matchingServices = services.filter(s =>
+                                s.category === 'AMENITIES' && s.serviceName.toUpperCase().includes(cfg.searchTerm)
+                            );
+                            if (matchingServices.length === 0) {
+                                return (
+                                    <View key={type} style={styles.serviceCard}>
+                                        <View style={styles.cardHeader}>
+                                            <Smartphone size={22} color={Colors.primary} />
+                                            <View style={styles.cardHeaderTitleContainer}>
+                                                <Text style={styles.cardTitle}>{cfg.label}</Text>
+                                                <Text style={styles.cardSubtitle}>{cfg.subtitle}</Text>
+                                            </View>
+                                        </View>
+                                        <View style={styles.cardBody}>
+                                            <Text style={styles.cardText}>No hay servicios de {cfg.label.toLowerCase()} configurados.</Text>
+                                        </View>
                                     </View>
-                                </View>
-                                <View style={styles.cardBody}>
-                                    <Text style={styles.cardText}>Genera un código QR dinámico de un solo uso para registrar tu ingreso.</Text>
-
-                                    {/* Selector de servicio */}
-                                    {services.filter(s => s.category === 'AMENITIES' || s.provider === 'QR_ACCESS').length > 0 && (
-                                        <View style={styles.qrServiceSelectorContainer}>
-                                            <Text style={styles.cardTextHeader}>Seleccionar servicio:</Text>
-                                            {(services.filter(s => s.category === 'AMENITIES' || s.provider === 'QR_ACCESS')).map(s => {
-                                                const isSelected = selectedServiceForQr === s.serviceId;
-                                                return (
-                                                    <TouchableOpacity
-                                                        key={s.serviceId}
-                                                        style={[
-                                                            styles.qrServiceOption,
-                                                            isSelected && styles.qrServiceOptionSelected,
-                                                            s.status !== 'ACTIVE' && styles.qrServiceOptionDisabled,
-                                                        ]}
-                                                        onPress={() => setSelectedServiceForQr(s.serviceId)}
-                                                    >
-                                                        <View style={styles.qrServiceOptionInfo}>
-                                                            <Text style={[
-                                                                styles.qrServiceOptionName,
-                                                                isSelected && { color: Colors.primary },
-                                                            ]}>
-                                                                {s.serviceName}
-                                                            </Text>
-                                                            <Text style={[
-                                                                styles.qrServiceOptionStatus,
-                                                                { color: getStatusColor(s.status) },
-                                                            ]}>
-                                                                {getStatusText(s.status)}
-                                                            </Text>
-                                                        </View>
-                                                        {isSelected && (
-                                                            <CheckCircle2 size={18} color={Colors.primary} />
-                                                        )}
-                                                    </TouchableOpacity>
-                                                );
-                                            })}
-                                        </View>
-                                    )}
-
-                                    {qrCode ? (
-                                        <View style={styles.qrContainer}>
-                                            {qrImageUrl ? (
-                                                <Image source={{ uri: qrImageUrl }} style={styles.qrImage} />
-                                            ) : (
-                                                <View style={styles.qrImagePlaceholder}>
-                                                    <ActivityIndicator size="small" color={Colors.primary} />
-                                                </View>
-                                            )}
-                                            <Text style={styles.qrTimerText}>Expira en: {qrCountdown} segundos</Text>
-                                        </View>
-                                    ) : (
-                                        <TouchableOpacity
-                                            style={[styles.actionBtn, {
-                                                opacity: selectedServiceForQr && services.find(s => s.serviceId === selectedServiceForQr)?.status === 'ACTIVE' ? 1 : 0.5
-                                            }]}
-                                            disabled={actionLoading || !selectedServiceForQr || services.find(s => s.serviceId === selectedServiceForQr)?.status !== 'ACTIVE'}
-                                            onPress={handleGenerateQr}
-                                        >
-                                            <RefreshCw size={16} color="#fff" style={{ marginRight: 6 }} />
-                                            <Text style={styles.actionBtnText}>Generar Acceso QR</Text>
-                                        </TouchableOpacity>
-                                    )}
-                                </View>
-                            </View>
-                        )}
-
-                        {/* ==========================================
-                            BBQ SECTION
-                           ========================================== */}
-                        {(activeSection === 'all' || activeSection === 'bbq') && (
-                            services.filter(s => s.category === 'AMENITIES' && s.serviceName.toUpperCase().includes('BBQ')).map(s => (
+                                );
+                            }
+                            return matchingServices.map(s => (
                                 <View key={s.serviceId} style={styles.serviceCard}>
                                     <View style={styles.cardHeader}>
-                                        <Calendar size={22} color={Colors.primary} />
+                                        <Smartphone size={22} color={Colors.primary} />
                                         <View style={styles.cardHeaderTitleContainer}>
                                             <Text style={styles.cardTitle}>{s.serviceName}</Text>
-                                            <Text style={styles.cardSubtitle}>Reservas y agenda de área social</Text>
+                                            <Text style={styles.cardSubtitle}>{s.condominioName} — {cfg.subtitle}</Text>
                                         </View>
                                         <Text style={[styles.statusBadge, { color: getStatusColor(s.status) }]}>
                                             {getStatusText(s.status)}
                                         </Text>
                                     </View>
                                     <View style={styles.cardBody}>
-                                        <Text style={styles.cardText}>Reserva tu espacio social directamente.</Text>
-                                        
+                                        <Text style={styles.cardText}>Genera un código QR dinámico de un solo uso para registrar tu ingreso o reserva tu espacio directamente.</Text>
+
+                                        {/* QR Generator */}
+                                            {qrCode && selectedServiceForQr === s.serviceId ? (
+                                                <View style={styles.qrContainer}>
+                                                    {qrImageUrl ? (
+                                                        <Image source={{ uri: qrImageUrl }} style={styles.qrImage} />
+                                                    ) : (
+                                                        <View style={styles.qrImagePlaceholder}>
+                                                            <ActivityIndicator size="small" color={Colors.primary} />
+                                                        </View>
+                                                    )}
+                                                    <Text style={styles.qrTimerText}>Expira en: {qrCountdown} segundos</Text>
+                                                </View>
+                                            ) : (
+                                                <TouchableOpacity
+                                                    style={[styles.actionBtn, { marginBottom: 16 }, s.status !== 'ACTIVE' && styles.disabledBtn]}
+                                                    disabled={s.status !== 'ACTIVE' || actionLoading}
+                                                    onPress={() => {
+                                                        setSelectedServiceForQr(s.serviceId);
+                                                        handleGenerateQr();
+                                                    }}
+                                                >
+                                                    <RefreshCw size={16} color="#fff" style={{ marginRight: 6 }} />
+                                                    <Text style={styles.actionBtnText}>Generar QR {cfg.label}</Text>
+                                                </TouchableOpacity>
+                                            )}
+
                                         {/* Agenda Preview */}
                                         <View style={styles.bbqAvailabilityContainer}>
                                             <Text style={styles.bbqAvailabilityHeader}>Fechas reservadas recientemente:</Text>
-                                            {bbqBookings.map((bk, i) => (
-                                                <View key={i} style={styles.bbqRow}>
-                                                    <Text style={styles.bbqDate}>{bk.date}</Text>
-                                                    <Text style={styles.bbqStatus}>{bk.timeSlot} ({bk.status})</Text>
-                                                </View>
-                                            ))}
+                                            {ad.bookings.length === 0 ? (
+                                                <Text style={{ fontSize: 12, color: Colors.muted }}>No hay reservas registradas.</Text>
+                                            ) : (
+                                                ad.bookings.map((bk: any, i: number) => (
+                                                    <View key={i} style={styles.bbqRow}>
+                                                        <Text style={styles.bbqDate}>{bk.date}</Text>
+                                                        <Text style={styles.bbqStatus}>{bk.timeSlot} ({bk.status})</Text>
+                                                    </View>
+                                                ))
+                                            )}
                                         </View>
 
+                                        {/* Reservation form */}
                                         <View style={styles.bookingForm}>
                                             <TextInput
                                                 style={styles.input}
                                                 placeholder="Fecha AAAA-MM-DD (Ej. 2026-06-20)"
-                                                value={selectedBbqDate}
-                                                onChangeText={setSelectedBbqDate}
+                                                value={ad.selectedDate}
+                                                onChangeText={(val) => setAmenityData(prev => ({
+                                                    ...prev,
+                                                    [type]: { ...prev[type], selectedDate: val }
+                                                }))}
                                                 placeholderTextColor={Colors.muted}
                                             />
                                             <TouchableOpacity
                                                 style={[styles.actionBtn, s.status !== 'ACTIVE' && styles.disabledBtn]}
                                                 disabled={s.status !== 'ACTIVE' || actionLoading}
-                                                onPress={() => handleReserveBbq(s.serviceId)}
+                                                onPress={() => handleReserveAmenity(type, s.serviceId)}
                                             >
                                                 <Plus size={16} color="#fff" style={{ marginRight: 6 }} />
-                                                <Text style={styles.actionBtnText}>Reservar BBQ</Text>
+                                                <Text style={styles.actionBtnText}>Reservar {cfg.label}</Text>
                                             </TouchableOpacity>
                                         </View>
                                     </View>
                                 </View>
-                            ))
-                        )}
+                            ));
+                        })}
 
                         {/* ==========================================
                             PARKING VEHICLES AND VISITOR CODES
                            ========================================== */}
-                        {(activeSection === 'all' || activeSection === 'parking') && (
+                        {activeSection === 'parking' && (
                             <View style={styles.serviceCard}>
                                 <View style={styles.cardHeader}>
                                     <Zap size={22} color={Colors.primary} />
@@ -688,11 +687,18 @@ export const MyServicesScreen = ({ navigation, route }: any) => {
                         {/* ==========================================
                             OTROS SERVICIOS (Categorías personalizadas)
                            ========================================== */}
-                        {activeSection === 'all' && (
+                        {activeSection === 'others' && (
                             (() => {
                                 const conocidas = ['ACCESS', 'CAMERAS', 'AMENITIES'];
                                 const otros = services.filter(s => !conocidas.includes(s.category));
-                                if (otros.length === 0) return null;
+                                if (otros.length === 0) {
+                                    return (
+                                        <View style={styles.emptyContainer}>
+                                            <Info size={48} color={Colors.muted} style={{ marginBottom: 12, opacity: 0.4 }} />
+                                            <Text style={styles.emptyText}>No hay otros servicios configurados.</Text>
+                                        </View>
+                                    );
+                                }
                                 return (
                                     <View style={styles.otherSection}>
                                         <Text style={styles.otherSectionTitle}>Otros Servicios</Text>
