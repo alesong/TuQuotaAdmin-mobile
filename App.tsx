@@ -9,6 +9,7 @@ import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { NavigationContainer } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Constants from 'expo-constants';
+import * as Notifications from 'expo-notifications';
 import { AuthProvider, useAuth, AlertProvider, initializeConfig, registerAssets, registerForPushNotificationsAsync, setStorageProvider, setupNotificationHandler, addNotificationResponseListener, DoorbellProvider } from './src/index';
 import { navigationRef } from './src/navigation/RootNavigation';
 import { AppNavigator } from './src/navigation/AppNavigator';
@@ -56,6 +57,25 @@ export default function App() {
 
   useEffect(() => {
     setupNotificationHandler();
+
+    (async () => {
+      try {
+        const lastResponse = await Notifications.getLastNotificationResponseAsync();
+        if (lastResponse) {
+          const data = lastResponse.notification?.request?.content?.data;
+          if (data?.type === 'doorbell') {
+            const navigate = navigationRef.current?.navigate;
+            if (navigate && data.url) {
+              setTimeout(() => {
+                navigate('MyServices' as any, { initialSection: 'cameras' });
+              }, 500);
+            }
+          }
+        }
+      } catch (e) {
+        console.log('Error handling cold-start notification:', e);
+      }
+    })();
 
     notificationListener.current = addNotificationResponseListener(response => {
       const data = response.notification?.request?.content?.data;

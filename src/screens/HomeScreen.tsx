@@ -556,7 +556,7 @@ export const HomeScreen = ({ navigation }: any) => {
                                 style={[styles.selectorItem, availableCondos.length > 1 && styles.activeSelector]}
                             >
                                 <Building2 size={16} color={Colors.primary} style={{ marginRight: 4 }} />
-                                <Text style={styles.condoName} numberOfLines={1}>
+                                <Text style={styles.condoName} numberOfLines={1} ellipsizeMode="tail">
                                     {selectedCondo.name}
                                 </Text>
                                 {availableCondos.length > 1 && (
@@ -1406,6 +1406,7 @@ const styles = StyleSheet.create({
         fontSize: 14,
         color: Colors.muted,
         fontWeight: '500',
+        flexShrink: 1,
     },
     onboardingCard: {
         flexDirection: 'row',
