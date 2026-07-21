@@ -58,25 +58,6 @@ export default function App() {
   useEffect(() => {
     setupNotificationHandler();
 
-    (async () => {
-      try {
-        const lastResponse = await Notifications.getLastNotificationResponseAsync();
-        if (lastResponse) {
-          const data = lastResponse.notification?.request?.content?.data;
-          if (data?.type === 'doorbell') {
-            const navigate = navigationRef.current?.navigate;
-            if (navigate && data.url) {
-              setTimeout(() => {
-                navigate('MyServices' as any, { initialSection: 'cameras' });
-              }, 500);
-            }
-          }
-        }
-      } catch (e) {
-        console.log('Error handling cold-start notification:', e);
-      }
-    })();
-
     notificationListener.current = addNotificationResponseListener(response => {
       const data = response.notification?.request?.content?.data;
       if (data?.type === 'doorbell') {
@@ -91,6 +72,20 @@ export default function App() {
       notificationListener.current?.remove();
     };
   }, []);
+
+  const lastNotificationResponse = Notifications.useLastNotificationResponse();
+
+  useEffect(() => {
+    if (
+      lastNotificationResponse &&
+      lastNotificationResponse.notification.request.content.data?.type === 'doorbell'
+    ) {
+      const navigate = navigationRef.current?.navigate;
+      if (navigate) {
+        navigate('MyServices' as any, { initialSection: 'cameras' });
+      }
+    }
+  }, [lastNotificationResponse]);
 
   return (
     <SafeAreaProvider>
