@@ -248,28 +248,26 @@ export const NotificationsScreen = ({ navigation }: any) => {
     return (
         <View style={styles.container}>
             <View style={styles.header}>
-                <View style={styles.headerLeft}>
-                    {isSelectionMode ? (
-                        <TouchableOpacity 
-                            onPress={() => {
-                                setIsSelectionMode(false);
-                                setSelectedIds([]);
-                            }} 
-                            style={styles.headerButton}
-                            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                        >
-                            <X size={24} color={Colors.text} />
-                        </TouchableOpacity>
-                    ) : (
-                        <TouchableOpacity 
-                            onPress={() => navigation.goBack()} 
-                            style={styles.backButton}
-                            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                        >
-                            <ArrowLeft size={24} color={Colors.text} />
-                        </TouchableOpacity>
-                    )}
-                </View>
+                {isSelectionMode ? (
+                    <TouchableOpacity 
+                        onPress={() => {
+                            setIsSelectionMode(false);
+                            setSelectedIds([]);
+                        }} 
+                        style={styles.headerButton}
+                        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                    >
+                        <X size={24} color={Colors.text} />
+                    </TouchableOpacity>
+                ) : (
+                    <TouchableOpacity 
+                        onPress={() => navigation.goBack()} 
+                        style={styles.backButton}
+                        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                    >
+                        <ArrowLeft size={24} color={Colors.text} />
+                    </TouchableOpacity>
+                )}
                 
                 <Text style={styles.headerTitle} numberOfLines={1}>
                     {isSelectionMode 
@@ -278,37 +276,35 @@ export const NotificationsScreen = ({ navigation }: any) => {
                     }
                 </Text>
                 
-                <View style={styles.headerRight}>
-                    {notifications.length > 0 && (
-                        isSelectionMode ? (
-                            <View style={styles.headerActions}>
-                                <TouchableOpacity 
-                                    onPress={toggleAll} 
-                                    style={styles.headerButton}
-                                    hitSlop={{ top: 10, bottom: 10, left: 5, right: 5 }}
-                                >
-                                    <View style={[styles.selectAllIndicator, selectedIds.length === notifications.length && styles.selectAllActive]} />
-                                </TouchableOpacity>
-                                <TouchableOpacity 
-                                    onPress={handleDeleteSelected} 
-                                    disabled={selectedIds.length === 0} 
-                                    style={[styles.headerButton, selectedIds.length === 0 && { opacity: 0.3 }]}
-                                    hitSlop={{ top: 10, bottom: 10, left: 5, right: 5 }}
-                                >
-                                    <Trash2 size={24} color="#ef4444" />
-                                </TouchableOpacity>
-                            </View>
-                        ) : (
+                {notifications.length > 0 && (
+                    isSelectionMode ? (
+                        <View style={styles.headerActions}>
                             <TouchableOpacity 
-                                onPress={() => setIsSelectionMode(true)} 
+                                onPress={toggleAll} 
                                 style={styles.headerButton}
-                                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                                hitSlop={{ top: 10, bottom: 10, left: 5, right: 5 }}
                             >
-                                <Text style={styles.selectText}>Seleccionar</Text>
+                                <View style={[styles.selectAllIndicator, selectedIds.length === notifications.length && styles.selectAllActive]} />
                             </TouchableOpacity>
-                        )
-                    )}
-                </View>
+                            <TouchableOpacity 
+                                onPress={handleDeleteSelected} 
+                                disabled={selectedIds.length === 0} 
+                                style={[styles.headerButton, selectedIds.length === 0 && { opacity: 0.3 }]}
+                                hitSlop={{ top: 10, bottom: 10, left: 5, right: 5 }}
+                            >
+                                <Trash2 size={24} color="#ef4444" />
+                            </TouchableOpacity>
+                        </View>
+                    ) : (
+                        <TouchableOpacity 
+                            onPress={() => setIsSelectionMode(true)} 
+                            style={styles.headerButton}
+                            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                        >
+                            <Text style={styles.selectText}>Seleccionar</Text>
+                        </TouchableOpacity>
+                    )
+                )}
             </View>
 
             <View style={styles.content}>
@@ -384,17 +380,6 @@ const styles = StyleSheet.create({
         backgroundColor: '#fff',
         borderBottomWidth: 1,
         borderBottomColor: '#f1f5f9',
-        minHeight: 64,
-    },
-    headerLeft: {
-        position: 'absolute',
-        left: 16,
-        zIndex: 10,
-    },
-    headerRight: {
-        position: 'absolute',
-        right: 16,
-        zIndex: 10,
     },
     headerActions: {
         flexDirection: 'row',
@@ -411,9 +396,9 @@ const styles = StyleSheet.create({
         fontSize: 17,
         fontWeight: '700',
         color: Colors.text,
+        flex: 1,
         textAlign: 'center',
         paddingHorizontal: 8,
-        flex: 1,
     },
     selectText: {
         color: Colors.primary,

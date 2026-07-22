@@ -379,7 +379,16 @@ export const HomeScreen = ({ navigation }: any) => {
 
 
     const handleSwitchCondo = () => {
-        if (availableCondos.length <= 1) return;
+        if (availableCondos.length <= 1) {
+            if (selectedCondo) {
+                showAlert({
+                    title: selectedCondo.name || 'Condominio',
+                    message: `Dirección: ${selectedCondo.direccion || `${selectedCondo.ciudad || ''}${selectedCondo.departamento ? `, ${selectedCondo.departamento}` : ''}` || 'Sin dirección registrada'}\nTus unidades: ${selectedCondo.viviendas?.length || 0}${selectedCondo.estado ? `\nEstado: ${selectedCondo.estado}` : ''}`,
+                    type: 'info',
+                });
+            }
+            return;
+        }
         setIsCondoSelectorVisible(true);
     };
 
@@ -528,85 +537,25 @@ export const HomeScreen = ({ navigation }: any) => {
     return (
         <View style={styles.container}>
             <View style={styles.header}>
-                <View style={{ flex: 1 }}>
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                    <View style={{ flex: 1 }}>
                         <Image
-                            source={Assets.logoQ}
-                            style={{ width: 40, height: 40 }}
+                            source={Assets.logoBig}
+                            style={{ height: 40, width: 160, marginLeft: -15 }}
                             resizeMode="contain"
                         />
-                        <View style={{ flex: 1, justifyContent: 'center' }}>
-                            <Text 
-                                style={[
-                                    styles.username, 
-                                    (authUser?.name?.length || 0) > 18 && { fontSize: 14, lineHeight: 16 }
-                                ]}
-                                numberOfLines={2}
-                            >
-                                {authUser?.name || 'Usuario'}
-                            </Text>
-                        </View>
                     </View>
-
-                    {selectedCondo && (
-                        <View style={styles.selectorsRow}>
-                            <TouchableOpacity
-                                onPress={handleSwitchCondo}
-                                disabled={availableCondos.length <= 1}
-                                style={[styles.selectorItem, availableCondos.length > 1 && styles.activeSelector]}
-                            >
-                                <Building2 size={16} color={Colors.primary} style={{ marginRight: 4 }} />
-                                <Text style={styles.condoName} numberOfLines={1} ellipsizeMode="tail">
-                                    {selectedCondo.name}
-                                </Text>
-                                {availableCondos.length > 1 && (
-                                    <View style={styles.chevronBadge}>
-                                        <ChevronDown size={12} color={Colors.primary} />
-                                    </View>
-                                )}
-                            </TouchableOpacity>
-
-                            {(selectedCondo?.pref_show_finanzas_pro !== false || isAdminOfSelectedCondo) && (
-                                <TouchableOpacity
-                                    style={styles.dashboardButton}
-                                    onPress={() => navigation.navigate('CondoDashboard', { condoId: selectedCondoId })}
-                                >
-                                    <BarChart3 size={16} color={Colors.primary} />
-                                </TouchableOpacity>
-                            )}
-
-                            <TouchableOpacity
-                                style={styles.dashboardButton}
-                                onPress={handleShare}
-                            >
-                                <Share2 size={16} color={Colors.primary} />
-                            </TouchableOpacity>
-
-                            {isAdminOfSelectedCondo && (
-                                <TouchableOpacity
-                                    style={styles.adminButton}
-                                    onPress={handleOpenAdmin}
-                                >
-                                    <ShieldCheck size={14} color={Colors.primary} style={{ marginRight: 4 }} />
-                                    <Text style={styles.adminButtonText}>Administrar</Text>
-                                </TouchableOpacity>
-                            )}
-                        </View>
-                    )}
-                </View>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
                     <TouchableOpacity 
                         style={styles.headerNotificationBtn} 
                         onPress={() => navigation.navigate('Notifications')}
                     >
-                        <Bell size={20} color={Colors.primary} />
+                        <Bell size={24} color={Colors.primary} />
                         {unreadCount > 0 && (
                             <View style={styles.headerNotificationBadge}>
                                 <Text style={styles.headerNotificationBadgeText}>{unreadCount > 99 ? '99+' : unreadCount}</Text>
                             </View>
                         )}
                     </TouchableOpacity>
-
                     <TouchableOpacity style={styles.profileButton} onPress={() => navigation.navigate('Profile')}>
                         <View style={styles.avatarMini}>
                             {userPhoto ? (
@@ -617,6 +566,51 @@ export const HomeScreen = ({ navigation }: any) => {
                         </View>
                     </TouchableOpacity>
                 </View>
+
+                {selectedCondo && (
+                    <View style={styles.selectorsRow}>
+                        <TouchableOpacity
+                            onPress={handleSwitchCondo}
+                            style={[styles.selectorItem, availableCondos.length > 1 && styles.activeSelector]}
+                        >
+                            <Building2 size={16} color={Colors.primary} style={{ marginRight: 4 }} />
+                            <Text style={styles.condoName} numberOfLines={1} ellipsizeMode="tail">
+                                {selectedCondo.name}
+                            </Text>
+                            {availableCondos.length > 1 && (
+                                <View style={styles.chevronBadge}>
+                                    <ChevronDown size={12} color={Colors.primary} />
+                                </View>
+                            )}
+                        </TouchableOpacity>
+
+                        {(selectedCondo?.pref_show_finanzas_pro !== false || isAdminOfSelectedCondo) && (
+                            <TouchableOpacity
+                                style={styles.dashboardButton}
+                                onPress={() => navigation.navigate('CondoDashboard', { condoId: selectedCondoId })}
+                            >
+                                <BarChart3 size={16} color={Colors.primary} />
+                            </TouchableOpacity>
+                        )}
+
+                        <TouchableOpacity
+                            style={styles.dashboardButton}
+                            onPress={handleShare}
+                        >
+                            <Share2 size={16} color={Colors.primary} />
+                        </TouchableOpacity>
+
+                        {isAdminOfSelectedCondo && (
+                            <TouchableOpacity
+                                style={styles.adminButton}
+                                onPress={handleOpenAdmin}
+                            >
+                                <ShieldCheck size={14} color={Colors.primary} style={{ marginRight: 4 }} />
+                                <Text style={styles.adminButtonText}>Administrar</Text>
+                            </TouchableOpacity>
+                        )}
+                    </View>
+                )}
             </View>
 
             <ScrollView
@@ -677,10 +671,9 @@ export const HomeScreen = ({ navigation }: any) => {
                             </View>
                         )}
 
-                        {/* Notifications Section - More prominent */}
-                        <View style={styles.section}>
-                            {condoNotifications.length > 0 ? (
-                                condoNotifications.map((notif) => (
+                        {condoNotifications.length > 0 && (
+                            <View style={styles.section}>
+                                {condoNotifications.map((notif) => (
                                     <View key={notif.id} style={styles.notificationCard}>
                                         <View style={styles.notificationIcon}>
                                             <Megaphone size={18} color={Colors.primary} />
@@ -693,14 +686,9 @@ export const HomeScreen = ({ navigation }: any) => {
                                             </Text>
                                         </View>
                                     </View>
-                                ))
-                            ) : !isLoadingNotifications && (
-                                <View style={styles.emptyNotifications}>
-                                    <Megaphone size={24} color={Colors.muted} opacity={0.5} />
-                                    <Text style={styles.emptyNotificationsText}>No hay comunicados recientes</Text>
-                                </View>
-                            )}
-                        </View>
+                                ))}
+                            </View>
+                        )}
 
 
                         {selectedCondo?.viviendas?.map((vivienda: any) => {
@@ -1204,9 +1192,7 @@ const styles = StyleSheet.create({
         } : {})
     },
     header: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'center',
+        flexDirection: 'column',
         padding: 24,
         paddingTop: Platform.OS === 'web' ? 24 : 48,
         backgroundColor: Colors.background,
@@ -1217,10 +1203,6 @@ const styles = StyleSheet.create({
         shadowOpacity: 0.1,
         shadowRadius: 4,
         elevation: 5,
-    },
-    greeting: {
-        fontSize: 16,
-        color: Colors.muted,
     },
     username: {
         fontSize: 18,
@@ -1383,7 +1365,8 @@ const styles = StyleSheet.create({
     selectorsRow: {
         flexDirection: 'row',
         alignItems: 'center',
-        marginTop: 8,
+        marginTop: 14,
+        marginBottom: 0,
         gap: 8,
         flexWrap: 'wrap',
     },
@@ -1935,6 +1918,7 @@ const styles = StyleSheet.create({
     headerNotificationBtn: {
         position: 'relative',
         padding: 4,
+        marginRight: 8,
     },
     headerNotificationBadge: {
         position: 'absolute',

@@ -33,7 +33,7 @@
         "expo-navigation-bar",
         {
           "enforceContrast": false,
-          "style": "light"
+          "style": "dark"
         }
       ],
       [
@@ -59,7 +59,7 @@
       "GOOGLE_CLIENT_ID": "39320229944-e8101biu39m6veb6uhggbqtt3jln97sl.apps.googleusercontent.com",
       "expo-navigation-bar": {
         "enforceContrast": false,
-        "style": "light"
+        "style": "dark"
       },
       "eas": {
         "projectId": "f0d5303a-8cc9-4d2a-ae51-7a7ebf190995"
