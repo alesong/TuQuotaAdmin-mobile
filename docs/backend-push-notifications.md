@@ -53,15 +53,16 @@ Usar el endpoint de Expo: `https://exp.host/--/api/v2/push/send`
   "to": "<expo-push-token>",
   "title": "¡Alguien toca el timbre!",
   "body": "Alguien está en la puerta.",
-  "sound": "doorbell.wav",
   "priority": "high",
-  "channelId": "doorbell",
+  "channelId": "doorbell_v2",
   "data": {
     "type": "doorbell",
     "url": "/my-services"
   }
 }
 ```
+
+> **Nota:** No se incluye `sound` en el payload. El sonido lo determina el canal de notificación `doorbell_v2`, que la app actualiza dinámicamente según la preferencia del usuario.
 
 **Headers:**
 ```
@@ -135,11 +136,10 @@ async function sendDoorbellPush(serviceId: string) {
     .filter(t => Expo.isExpoPushToken(t))
     .map(token => ({
       to: token,
-      sound: 'doorbell.wav',
       title: '¡Alguien toca el timbre!',
       body: 'Alguien está en la puerta.',
       priority: 'high' as const,
-      channelId: 'doorbell',
+      channelId: 'doorbell_v2',
       data: { type: 'doorbell', url: '/my-services' },
     }));
 
@@ -174,9 +174,8 @@ async function sendPushNotification(token: string) {
       to: token,
       title: '¡Alguien toca el timbre!',
       body: 'Alguien está en la puerta.',
-      sound: 'doorbell.wav',
       priority: 'high',
-      channelId: 'doorbell',
+      channelId: 'doorbell_v2',
       data: { type: 'doorbell', url: '/my-services' },
     }),
   });

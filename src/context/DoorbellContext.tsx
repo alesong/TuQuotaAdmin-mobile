@@ -50,7 +50,7 @@ async function applyChannelPreferences(prefs: DoorbellPreferences) {
       importance: Notifications.AndroidImportance.MAX,
       vibrationPattern: [0, 500, 200, 500],
       lightColor: '#6366f1',
-      sound: prefs.enabled ? prefs.sound : 'default',
+      sound: prefs.enabled ? prefs.sound : null,
     });
   } catch (e) {
     console.error('Error applying channel preferences:', e);

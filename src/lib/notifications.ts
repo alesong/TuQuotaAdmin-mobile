@@ -40,7 +40,7 @@ export async function ensureNotificationChannelsAsync() {
     if (stored) {
       const parsed = JSON.parse(stored);
       if (parsed.enabled === false) {
-        doorbellSound = 'default';
+        doorbellSound = null;
       } else if (parsed.sound) {
         doorbellSound = parsed.sound;
       }
@@ -52,7 +52,6 @@ export async function ensureNotificationChannelsAsync() {
       importance: Notifications.AndroidImportance.MAX,
       vibrationPattern: [0, 250, 250, 250],
       lightColor: '#6366f1',
-      sound: 'default',
     });
     await Notifications.setNotificationChannelAsync(CHANNEL_DOORBELL, {
       name: 'Timbre',
@@ -163,13 +162,30 @@ export async function setupNotificationHandler() {
 
   try {
     Notifications.setNotificationHandler({
-      handleNotification: async () => ({
-        shouldShowAlert: true,
-        shouldPlaySound: true,
-        shouldSetBadge: true,
-        shouldShowBanner: true,
-        shouldShowList: true,
-      }),
+      handleNotification: async (notification) => {
+        const isDoorbell = notification.request.content.data?.type === 'doorbell';
+        let shouldPlaySound = true;
+
+        if (isDoorbell) {
+          try {
+            const stored = await AsyncStorage.getItem(DOORBELL_PREFS_KEY);
+            if (stored) {
+              const parsed = JSON.parse(stored);
+              if (parsed.enabled === false) {
+                shouldPlaySound = false;
+              }
+            }
+          } catch {}
+        }
+
+        return {
+          shouldShowAlert: true,
+          shouldPlaySound,
+          shouldSetBadge: true,
+          shouldShowBanner: true,
+          shouldShowList: true,
+        };
+      },
     });
   } catch (e) {
     console.log('Error setting notification handler:', e);
