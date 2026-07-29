@@ -63,6 +63,7 @@ export const MyServicesScreen = ({ navigation, route }: any) => {
 
     // Action/API states
     const [actionLoading, setActionLoading] = useState(false);
+    const [gateLoading, setGateLoading] = useState<string | null>(null);
     const [alertConfig, setAlertConfig] = useState<{ title: string, message: string, type: 'success' | 'error' | 'warning' } | null>(null);
     const [isAlertVisible, setIsAlertVisible] = useState(false);
 
@@ -71,7 +72,7 @@ export const MyServicesScreen = ({ navigation, route }: any) => {
     const glowAnim = useRef(new Animated.Value(0)).current;
 
     useEffect(() => {
-        if (actionLoading) {
+        if (gateLoading) {
             const pulse = Animated.loop(
                 Animated.sequence([
                     Animated.timing(scaleAnim, {
@@ -113,7 +114,7 @@ export const MyServicesScreen = ({ navigation, route }: any) => {
             scaleAnim.setValue(1);
             glowAnim.setValue(0);
         }
-    }, [actionLoading, scaleAnim, glowAnim]);
+    }, [gateLoading, scaleAnim, glowAnim]);
 
     // QR states
     const [qrCode, setQrCode] = useState<string | null>(null);
@@ -266,8 +267,8 @@ export const MyServicesScreen = ({ navigation, route }: any) => {
     // PORTON ACTION
     // ==========================================
 
-    const handleOpenGate = async (serviceId: string) => {
-        setActionLoading(true);
+    const handleOpenGate = async (serviceId: string, serviceName: string) => {
+        setGateLoading(serviceId);
         try {
             const response = await fetch(`${API_URL}/resident-services/open-gate`, {
                 method: 'POST',
@@ -279,14 +280,14 @@ export const MyServicesScreen = ({ navigation, route }: any) => {
             });
             const data = await response.json();
             if (response.ok && data.success) {
-                showAlert('Portón Abierto', 'Apertura vehicular enviada con éxito.', 'success');
+                showAlert(serviceName, `Apertura enviada con éxito a ${serviceName}.`, 'success');
             } else {
                 showAlert('Error', data.message || 'No se pudo abrir el portón.', 'error');
             }
         } catch (error) {
             showAlert('Fallo de Red', 'Verifique su conexión a internet.', 'error');
         } finally {
-            setActionLoading(false);
+            setGateLoading(null);
         }
     };
 
@@ -543,15 +544,15 @@ export const MyServicesScreen = ({ navigation, route }: any) => {
                                             style={[
                                                 styles.actionBtn,
                                                 s.status !== 'ACTIVE' && styles.disabledBtn,
-                                                actionLoading && {
+                                                gateLoading === s.serviceId && {
                                                     transform: [{ scale: scaleAnim }],
                                                     backgroundColor: glowAnim.interpolate({ inputRange: [0, 1], outputRange: ['#1e3a8a', '#3b82f6'] }),
                                                 },
                                             ]}
-                                            disabled={s.status !== 'ACTIVE' || actionLoading}
-                                            onPress={() => handleOpenGate(s.serviceId)}
+                                            disabled={s.status !== 'ACTIVE' || gateLoading !== null}
+                                            onPress={() => handleOpenGate(s.serviceId, s.serviceName)}
                                         >
-                                            {actionLoading ? (
+                                            {gateLoading === s.serviceId ? (
                                                 <ActivityIndicator size="small" color="#fff" style={{ marginRight: 6 }} />
                                             ) : (
                                                 <Play size={16} color="#fff" style={{ marginRight: 6 }} />
@@ -844,6 +845,7 @@ export const MyServicesScreen = ({ navigation, route }: any) => {
                     title={alertConfig.title}
                     message={alertConfig.message}
                     onClose={() => setIsAlertVisible(false)}
+                    autoCloseDelay={alertConfig.type === 'success' ? 3 : undefined}
                 />
             )}
 

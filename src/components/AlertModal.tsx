@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Modal, View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { Colors } from '../constants/Colors';
 import { Button } from './Button';
@@ -18,6 +18,7 @@ interface AlertModalProps {
     type?: AlertType;
     onClose: () => void;
     buttons?: AlertButton[];
+    autoCloseDelay?: number;
 }
 
 export const AlertModal: React.FC<AlertModalProps> = ({
@@ -27,7 +28,33 @@ export const AlertModal: React.FC<AlertModalProps> = ({
     type = 'info',
     onClose,
     buttons,
+    autoCloseDelay,
 }) => {
+    const [countdown, setCountdown] = useState(0);
+    const countdownRef = useRef(countdown);
+    countdownRef.current = countdown;
+
+    useEffect(() => {
+        if (autoCloseDelay && autoCloseDelay > 0 && isVisible) {
+            setCountdown(autoCloseDelay);
+            const timer = setInterval(() => {
+                setCountdown(prev => {
+                    if (prev <= 1) {
+                        clearInterval(timer);
+                        onClose();
+                        return 0;
+                    }
+                    return prev - 1;
+                });
+            }, 1000);
+            return () => {
+                clearInterval(timer);
+            };
+        } else {
+            setCountdown(0);
+        }
+    }, [autoCloseDelay, isVisible, onClose]);
+
     const getIconColor = () => {
         switch (type) {
             case 'success': return Colors.success;
@@ -51,7 +78,7 @@ export const AlertModal: React.FC<AlertModalProps> = ({
         if (!buttons || buttons.length === 0) {
             return (
                 <Button
-                    title="Entendido"
+                    title={countdown > 0 ? `${countdown}s` : 'Entendido'}
                     onPress={onClose}
                     style={styles.button}
                 />
