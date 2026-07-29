@@ -9,8 +9,12 @@ import {
     TextInput,
     Platform,
     Image,
+    Animated,
+    Easing,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
+
+const AnimatedTouchable = Animated.createAnimatedComponent(TouchableOpacity);
 import {
     ArrowLeft,
     Lock,
@@ -35,6 +39,7 @@ import { useAuth } from '../context/AuthContext';
 import { AlertModal } from '../components/AlertModal';
 import { useDoorbell } from '../context/DoorbellContext';
 import { DoorbellSettingsModal } from '../components/DoorbellSettingsModal';
+import { CameraStreamViewer } from '../components/CameraStreamViewer';
 import { toDataURL } from 'qrcode';
 
 const AMENITY_CONFIG: Record<string, { label: string, searchTerm: string, subtitle: string }> = {
@@ -61,6 +66,55 @@ export const MyServicesScreen = ({ navigation, route }: any) => {
     const [alertConfig, setAlertConfig] = useState<{ title: string, message: string, type: 'success' | 'error' | 'warning' } | null>(null);
     const [isAlertVisible, setIsAlertVisible] = useState(false);
 
+    // Gate button animation refs
+    const scaleAnim = useRef(new Animated.Value(1)).current;
+    const glowAnim = useRef(new Animated.Value(0)).current;
+
+    useEffect(() => {
+        if (actionLoading) {
+            const pulse = Animated.loop(
+                Animated.sequence([
+                    Animated.timing(scaleAnim, {
+                        toValue: 1.06,
+                        duration: 400,
+                        easing: Easing.inOut(Easing.ease),
+                        useNativeDriver: true,
+                    }),
+                    Animated.timing(scaleAnim, {
+                        toValue: 1,
+                        duration: 400,
+                        easing: Easing.inOut(Easing.ease),
+                        useNativeDriver: true,
+                    }),
+                ])
+            );
+            const glow = Animated.loop(
+                Animated.sequence([
+                    Animated.timing(glowAnim, {
+                        toValue: 1,
+                        duration: 800,
+                        useNativeDriver: false,
+                    }),
+                    Animated.timing(glowAnim, {
+                        toValue: 0,
+                        duration: 800,
+                        useNativeDriver: false,
+                    }),
+                ])
+            );
+            Animated.parallel([pulse, glow]).start();
+            return () => {
+                pulse.stop();
+                glow.stop();
+                scaleAnim.setValue(1);
+                glowAnim.setValue(0);
+            };
+        } else {
+            scaleAnim.setValue(1);
+            glowAnim.setValue(0);
+        }
+    }, [actionLoading, scaleAnim, glowAnim]);
+
     // QR states
     const [qrCode, setQrCode] = useState<string | null>(null);
     const [qrExpiry, setQrExpiry] = useState<string | null>(null);
@@ -83,6 +137,9 @@ export const MyServicesScreen = ({ navigation, route }: any) => {
     const [tempCodes, setTempCodes] = useState<any[]>([]);
 
     const API_URL = Config.API_URL;
+
+    const [cameraStreams, setCameraStreams] = useState<Record<string, string | null>>({});
+    const [loadingStreams, setLoadingStreams] = useState<Record<string, boolean>>({});
 
     const fetchMyServicesRef = useRef<(() => Promise<void>) | null>(null);
     const fetchAmenityAvailabilityRef = useRef<((type: string) => Promise<void>) | null>(null);
@@ -345,6 +402,26 @@ export const MyServicesScreen = ({ navigation, route }: any) => {
         }
     };
 
+    const fetchCameraStream = async (serviceId: string) => {
+        if (cameraStreams[serviceId]) return;
+        setLoadingStreams(prev => ({ ...prev, [serviceId]: true }));
+        try {
+            const response = await fetch(`${API_URL}/resident-services/camera-stream/${serviceId}`, {
+                headers: { 'Authorization': `Bearer ${token}` },
+            });
+            if (response.ok) {
+                const data = await response.json();
+                setCameraStreams(prev => ({ ...prev, [serviceId]: data.streamUrl }));
+            } else {
+                setCameraStreams(prev => ({ ...prev, [serviceId]: null }));
+            }
+        } catch {
+            setCameraStreams(prev => ({ ...prev, [serviceId]: null }));
+        } finally {
+            setLoadingStreams(prev => ({ ...prev, [serviceId]: false }));
+        }
+    };
+
     const getStatusText = (status: string) => {
         switch (status) {
             case 'ACTIVE': return 'Activo';
@@ -462,14 +539,25 @@ export const MyServicesScreen = ({ navigation, route }: any) => {
                                     <View style={styles.cardBody}>
                                         <Text style={styles.cardText}>Acciona la apertura automática del portón desde tu celular.</Text>
                                         
-                                        <TouchableOpacity
-                                            style={[styles.actionBtn, s.status !== 'ACTIVE' && styles.disabledBtn]}
+                                        <AnimatedTouchable
+                                            style={[
+                                                styles.actionBtn,
+                                                s.status !== 'ACTIVE' && styles.disabledBtn,
+                                                actionLoading && {
+                                                    transform: [{ scale: scaleAnim }],
+                                                    backgroundColor: glowAnim.interpolate({ inputRange: [0, 1], outputRange: ['#1e3a8a', '#3b82f6'] }),
+                                                },
+                                            ]}
                                             disabled={s.status !== 'ACTIVE' || actionLoading}
                                             onPress={() => handleOpenGate(s.serviceId)}
                                         >
-                                            <Play size={16} color="#fff" style={{ marginRight: 6 }} />
-                                            <Text style={styles.actionBtnText}>Abrir Portón</Text>
-                                        </TouchableOpacity>
+                                            {actionLoading ? (
+                                                <ActivityIndicator size="small" color="#fff" style={{ marginRight: 6 }} />
+                                            ) : (
+                                                <Play size={16} color="#fff" style={{ marginRight: 6 }} />
+                                            )}
+                                            <Text style={styles.actionBtnText}>Abrir {s.serviceName}</Text>
+                                        </AnimatedTouchable>
                                     </View>
                                 </View>
                             ))
@@ -493,13 +581,25 @@ export const MyServicesScreen = ({ navigation, route }: any) => {
                                     </View>
                                     <View style={styles.cardBody}>
                                         {s.status === 'ACTIVE' ? (
-                                            <View style={styles.cameraPreviewContainer}>
-                                                <View style={styles.cameraDot} />
-                                                <Text style={styles.cameraPreviewText}>Transmisión en vivo simulada</Text>
-                                                <Text style={{ fontSize: 10, color: 'rgba(255,255,255,0.7)', marginTop: 4 }}>
-                                                    {s.serviceName.toUpperCase()} - FEED ACTIVO
-                                                </Text>
-                                            </View>
+                                            <>
+                                                {s.streamUrl ? (
+                                                    <CameraStreamViewer streamUrl={s.streamUrl} serviceName={s.serviceName} />
+                                                ) : loadingStreams[s.serviceId] ? (
+                                                    <View style={styles.cameraLoadingContainer}>
+                                                        <ActivityIndicator size="small" color={Colors.primary} />
+                                                        <Text style={styles.cameraLoadingText}>Cargando stream...</Text>
+                                                    </View>
+                                                ) : cameraStreams[s.serviceId] ? (
+                                                    <CameraStreamViewer streamUrl={cameraStreams[s.serviceId]!} serviceName={s.serviceName} />
+                                                ) : (
+                                                    <TouchableOpacity
+                                                        style={styles.cameraActivateBtn}
+                                                        onPress={() => fetchCameraStream(s.serviceId)}
+                                                    >
+                                                        <Text style={styles.cameraActivateBtnText}>Ver transmisión en vivo</Text>
+                                                    </TouchableOpacity>
+                                                )}
+                                            </>
                                         ) : (
                                             <View style={styles.cameraSuspendedContainer}>
                                                 <AlertCircle size={28} color={Colors.error} style={{ marginBottom: 6 }} />
@@ -927,25 +1027,25 @@ const styles = StyleSheet.create({
     disabledBtn: {
         backgroundColor: '#cbd5e1',
     },
-    cameraPreviewContainer: {
+    cameraLoadingContainer: {
         height: 150,
         backgroundColor: '#0f172a',
         borderRadius: 12,
         justifyContent: 'center',
         alignItems: 'center',
-        position: 'relative',
-        overflow: 'hidden',
     },
-    cameraDot: {
-        position: 'absolute',
-        top: 12,
-        right: 12,
-        width: 8,
-        height: 8,
-        borderRadius: 4,
-        backgroundColor: '#ef4444',
+    cameraLoadingText: {
+        color: '#94a3b8',
+        fontSize: 13,
+        marginTop: 8,
     },
-    cameraPreviewText: {
+    cameraActivateBtn: {
+        backgroundColor: Colors.primary,
+        borderRadius: 10,
+        paddingVertical: 14,
+        alignItems: 'center',
+    },
+    cameraActivateBtnText: {
         color: '#fff',
         fontWeight: 'bold',
         fontSize: 14,
