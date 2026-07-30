@@ -9,30 +9,22 @@ import {
     TextInput,
     Platform,
     Image,
-    Animated,
-    Easing,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
-
-const AnimatedTouchable = Animated.createAnimatedComponent(TouchableOpacity);
 import {
     ArrowLeft,
-    Lock,
     Video,
     Smartphone,
     Key,
     RefreshCw,
-    Play,
-    Calendar,
     Plus,
-    Search,
     AlertCircle,
-    CheckCircle2,
     Info,
     Zap,
     Wifi,
     Settings,
 } from 'lucide-react-native';
+import { ActionButton } from '../components/ActionButton';
 import { Colors } from '../constants/Colors';
 import { Config } from '../constants/Config';
 import { useAuth } from '../context/AuthContext';
@@ -66,55 +58,6 @@ export const MyServicesScreen = ({ navigation, route }: any) => {
     const [gateLoading, setGateLoading] = useState<string | null>(null);
     const [alertConfig, setAlertConfig] = useState<{ title: string, message: string, type: 'success' | 'error' | 'warning' } | null>(null);
     const [isAlertVisible, setIsAlertVisible] = useState(false);
-
-    // Gate button animation refs
-    const scaleAnim = useRef(new Animated.Value(1)).current;
-    const glowAnim = useRef(new Animated.Value(0)).current;
-
-    useEffect(() => {
-        if (gateLoading) {
-            const pulse = Animated.loop(
-                Animated.sequence([
-                    Animated.timing(scaleAnim, {
-                        toValue: 1.06,
-                        duration: 400,
-                        easing: Easing.inOut(Easing.ease),
-                        useNativeDriver: true,
-                    }),
-                    Animated.timing(scaleAnim, {
-                        toValue: 1,
-                        duration: 400,
-                        easing: Easing.inOut(Easing.ease),
-                        useNativeDriver: true,
-                    }),
-                ])
-            );
-            const glow = Animated.loop(
-                Animated.sequence([
-                    Animated.timing(glowAnim, {
-                        toValue: 1,
-                        duration: 800,
-                        useNativeDriver: false,
-                    }),
-                    Animated.timing(glowAnim, {
-                        toValue: 0,
-                        duration: 800,
-                        useNativeDriver: false,
-                    }),
-                ])
-            );
-            Animated.parallel([pulse, glow]).start();
-            return () => {
-                pulse.stop();
-                glow.stop();
-                scaleAnim.setValue(1);
-                glowAnim.setValue(0);
-            };
-        } else {
-            scaleAnim.setValue(1);
-            glowAnim.setValue(0);
-        }
-    }, [gateLoading, scaleAnim, glowAnim]);
 
     // QR states
     const [qrCode, setQrCode] = useState<string | null>(null);
@@ -538,27 +481,14 @@ export const MyServicesScreen = ({ navigation, route }: any) => {
                                         </Text>
                                     </View>
                                     <View style={styles.cardBody}>
-                                        <Text style={styles.cardText}>Acciona la apertura automática del portón desde tu celular.</Text>
+                                        <Text style={styles.cardText}>{s.description || 'Acciona la apertura automática del portón desde tu celular.'}</Text>
                                         
-                                        <AnimatedTouchable
-                                            style={[
-                                                styles.actionBtn,
-                                                s.status !== 'ACTIVE' && styles.disabledBtn,
-                                                gateLoading === s.serviceId && {
-                                                    transform: [{ scale: scaleAnim }],
-                                                    backgroundColor: glowAnim.interpolate({ inputRange: [0, 1], outputRange: ['#1e3a8a', '#3b82f6'] }),
-                                                },
-                                            ]}
-                                            disabled={s.status !== 'ACTIVE' || gateLoading !== null}
+                                        <ActionButton
+                                            config={s.button_config}
                                             onPress={() => handleOpenGate(s.serviceId, s.serviceName)}
-                                        >
-                                            {gateLoading === s.serviceId ? (
-                                                <ActivityIndicator size="small" color="#fff" style={{ marginRight: 6 }} />
-                                            ) : (
-                                                <Play size={16} color="#fff" style={{ marginRight: 6 }} />
-                                            )}
-                                            <Text style={styles.actionBtnText}>Abrir {s.serviceName}</Text>
-                                        </AnimatedTouchable>
+                                            disabled={s.status !== 'ACTIVE'}
+                                            loading={gateLoading === s.serviceId}
+                                        />
                                     </View>
                                 </View>
                             ))
@@ -651,7 +581,7 @@ export const MyServicesScreen = ({ navigation, route }: any) => {
                                         </Text>
                                     </View>
                                     <View style={styles.cardBody}>
-                                        <Text style={styles.cardText}>Genera un código QR dinámico de un solo uso para registrar tu ingreso o reserva tu espacio directamente.</Text>
+                                        <Text style={styles.cardText}>{s.description || 'Genera un código QR dinámico de un solo uso para registrar tu ingreso o reserva tu espacio directamente.'}</Text>
 
                                         {/* QR Generator */}
                                             {qrCode && selectedServiceForQr === s.serviceId ? (
@@ -666,17 +596,17 @@ export const MyServicesScreen = ({ navigation, route }: any) => {
                                                     <Text style={styles.qrTimerText}>Expira en: {qrCountdown} segundos</Text>
                                                 </View>
                                             ) : (
-                                                <TouchableOpacity
-                                                    style={[styles.actionBtn, { marginBottom: 16 }, s.status !== 'ACTIVE' && styles.disabledBtn]}
-                                                    disabled={s.status !== 'ACTIVE' || actionLoading}
+                                                <ActionButton
+                                                    config={s.button_config}
+                                                    label={`Generar QR ${cfg.label}`}
                                                     onPress={() => {
                                                         setSelectedServiceForQr(s.serviceId);
                                                         handleGenerateQr();
                                                     }}
-                                                >
-                                                    <RefreshCw size={16} color="#fff" style={{ marginRight: 6 }} />
-                                                    <Text style={styles.actionBtnText}>Generar QR {cfg.label}</Text>
-                                                </TouchableOpacity>
+                                                    disabled={s.status !== 'ACTIVE' || actionLoading}
+                                                    loading={actionLoading}
+                                                    style={{ marginBottom: 16 }}
+                                                />
                                             )}
 
                                         {/* Agenda Preview */}
@@ -706,14 +636,13 @@ export const MyServicesScreen = ({ navigation, route }: any) => {
                                                 }))}
                                                 placeholderTextColor={Colors.muted}
                                             />
-                                            <TouchableOpacity
-                                                style={[styles.actionBtn, s.status !== 'ACTIVE' && styles.disabledBtn]}
-                                                disabled={s.status !== 'ACTIVE' || actionLoading}
+                                            <ActionButton
+                                                config={s.button_config}
+                                                label={`Reservar ${cfg.label}`}
                                                 onPress={() => handleReserveAmenity(type, s.serviceId)}
-                                            >
-                                                <Plus size={16} color="#fff" style={{ marginRight: 6 }} />
-                                                <Text style={styles.actionBtnText}>Reservar {cfg.label}</Text>
-                                            </TouchableOpacity>
+                                                disabled={s.status !== 'ACTIVE' || actionLoading}
+                                                loading={actionLoading}
+                                            />
                                         </View>
                                     </View>
                                 </View>
