@@ -10,7 +10,6 @@ import {
     Platform,
     Image,
 } from 'react-native';
-import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import { useFocusEffect } from '@react-navigation/native';
 import {
     ArrowLeft,
@@ -24,6 +23,7 @@ import {
     Zap,
     Wifi,
     Settings,
+    Trash2,
 } from 'lucide-react-native';
 import { ActionButton } from '../components/ActionButton';
 import { Colors } from '../constants/Colors';
@@ -41,14 +41,6 @@ const AMENITY_CONFIG: Record<string, { label: string, searchTerm: string, subtit
     bbq: { label: 'BBQ', searchTerm: 'BBQ', subtitle: 'Reservas y agenda de área social' },
     salon: { label: 'Salón', searchTerm: 'SALÓN', subtitle: 'Reservas de salón de eventos' },
 };
-
-const toISODate = (d: Date) => {
-    const m = String(d.getMonth() + 1).padStart(2, '0');
-    const day = String(d.getDate()).padStart(2, '0');
-    return `${d.getFullYear()}-${m}-${day}`;
-};
-
-const getTodayISO = () => toISODate(new Date());
 
 export const MyServicesScreen = ({ navigation, route }: any) => {
     const { token } = useAuth();
@@ -75,20 +67,8 @@ export const MyServicesScreen = ({ navigation, route }: any) => {
     const [selectedServiceForQr, setSelectedServiceForQr] = useState<string>('');
     const [qrImageUrl, setQrImageUrl] = useState<string | null>(null);
 
-    // Amenity states (Piscina, Gimnasio, BBQ, Salón)
-    const [amenityData, setAmenityData] = useState<Record<string, { bookings: any[], selectedDate: string, selectedSlot: string }>>({
-        pool: { bookings: [], selectedDate: '', selectedSlot: '12:00 - 18:00' },
-        gym: { bookings: [], selectedDate: '', selectedSlot: '12:00 - 18:00' },
-        bbq: { bookings: [], selectedDate: '', selectedSlot: '12:00 - 18:00' },
-        salon: { bookings: [], selectedDate: '', selectedSlot: '12:00 - 18:00' },
-    });
-    const [datePickerType, setDatePickerType] = useState<string | null>(null);
-
     // Parking states
     const [vehicles, setVehicles] = useState<any[]>([]);
-    const [visitorPlate, setVisitorPlate] = useState('');
-    const [visitorName, setVisitorName] = useState('');
-    const [tempCodes, setTempCodes] = useState<any[]>([]);
     const [newVehicle, setNewVehicle] = useState({ plate: '', brand: '', model: '', color: '' });
 
     const API_URL = Config.API_URL;
@@ -97,7 +77,6 @@ export const MyServicesScreen = ({ navigation, route }: any) => {
     const [loadingStreams, setLoadingStreams] = useState<Record<string, boolean>>({});
 
     const fetchMyServicesRef = useRef<(() => Promise<void>) | null>(null);
-    const fetchAmenityAvailabilityRef = useRef<((type: string) => Promise<void>) | null>(null);
     const fetchVehiclesRef = useRef<(() => Promise<void>) | null>(null);
 
     const showAlert = (title: string, message: string, type: 'success' | 'error' | 'warning' = 'success') => {
@@ -139,24 +118,6 @@ export const MyServicesScreen = ({ navigation, route }: any) => {
     const { connected: doorbellConnected, showAlert: showDoorbellAlert, doorbellServiceId, preferences, updatePreferences } = useDoorbell();
     const [showDoorbellSettings, setShowDoorbellSettings] = useState(false);
 
-    const fetchAmenityAvailability = async (type: string) => {
-        try {
-            const response = await fetch(`${API_URL}/resident-services/${type}/availability`, {
-                cache: 'no-cache',
-                headers: {
-                    'Authorization': `Bearer ${token}`,
-                },
-            });
-            if (response.ok) {
-                const data = await response.json();
-                setAmenityData(prev => ({ ...prev, [type]: { ...prev[type], bookings: data } }));
-            }
-        } catch (error) {
-            console.error(`Error fetching ${type} availability:`, error);
-        }
-    };
-    fetchAmenityAvailabilityRef.current = fetchAmenityAvailability;
-
     const fetchVehicles = async () => {
         try {
             const response = await fetch(`${API_URL}/resident-services/parqueadero/vehiculos`, {
@@ -178,7 +139,6 @@ export const MyServicesScreen = ({ navigation, route }: any) => {
     useFocusEffect(
         useCallback(() => {
             fetchMyServicesRef.current?.();
-            ['pool', 'gym', 'bbq', 'salon'].forEach(t => fetchAmenityAvailabilityRef.current?.(t));
             fetchVehiclesRef.current?.();
         }, [])
     );
@@ -280,44 +240,6 @@ export const MyServicesScreen = ({ navigation, route }: any) => {
     };
 
     // ==========================================
-    // AMENITY RESERVATION ACTION
-    // ==========================================
-
-    const handleReserveAmenity = async (type: string, serviceId: string) => {
-        const { selectedDate, selectedSlot } = amenityData[type] || {};
-        if (!selectedDate) {
-            showAlert('Campo requerido', 'Por favor introduce una fecha (AAAA-MM-DD) para la reserva.', 'warning');
-            return;
-        }
-        setActionLoading(true);
-        try {
-            const response = await fetch(`${API_URL}/resident-services/${type}/reserve`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`,
-                },
-                body: JSON.stringify({
-                    date: selectedDate,
-                    timeSlot: selectedSlot,
-                    serviceId,
-                }),
-            });
-            const data = await response.json();
-            if (response.ok && data.success) {
-                setAmenityData(prev => ({ ...prev, [type]: { ...prev[type], selectedDate: '' } }));
-                fetchAmenityAvailability(type);
-            } else {
-                showAlert('Error', data.message || 'No se pudo reservar en este momento.', 'error');
-            }
-        } catch (error) {
-            showAlert('Fallo de Red', 'Intente de nuevo más tarde.', 'error');
-        } finally {
-            setActionLoading(false);
-        }
-    };
-
-    // ==========================================
     // PARKING ACTION
     // ==========================================
 
@@ -350,31 +272,20 @@ export const MyServicesScreen = ({ navigation, route }: any) => {
         }
     };
 
-    const handleGenerateVisitorAccess = async () => {
-        if (!visitorPlate) {
-            showAlert('Placa Requerida', 'Ingresa la placa del vehículo visitante.', 'warning');
-            return;
-        }
+    const handleDeleteVehicle = async (plate: string) => {
         setActionLoading(true);
         try {
-            const response = await fetch(`${API_URL}/resident-services/parqueadero/visita-temporal`, {
-                method: 'POST',
+            const response = await fetch(`${API_URL}/resident-services/parqueadero/vehiculos/${encodeURIComponent(plate)}`, {
+                method: 'DELETE',
                 headers: {
-                    'Content-Type': 'application/json',
                     'Authorization': `Bearer ${token}`,
                 },
-                body: JSON.stringify({
-                    plate: visitorPlate,
-                    name: visitorName,
-                }),
             });
             const data = await response.json();
             if (response.ok && data.success) {
-                setTempCodes(prev => [data, ...prev]);
-                setVisitorPlate('');
-                setVisitorName('');
+                setVehicles(data.vehicles);
             } else {
-                showAlert('Error', data.message || 'No se pudo generar el acceso.', 'error');
+                showAlert('Error', data.message || 'No se pudo eliminar el vehículo.', 'error');
             }
         } catch (error) {
             showAlert('Error de Red', 'Revisa tu conexión.', 'error');
@@ -585,7 +496,6 @@ export const MyServicesScreen = ({ navigation, route }: any) => {
                         {(['pool', 'gym', 'bbq', 'salon'] as const).map(type => {
                             if (activeSection !== type) return null;
                             const cfg = AMENITY_CONFIG[type];
-                            const ad = amenityData[type] || { bookings: [], selectedDate: '', selectedSlot: '12:00 - 18:00' };
                             const matchingServices = services.filter(s =>
                                 s.category === 'AMENITIES' && s.serviceName.toUpperCase().includes(cfg.searchTerm)
                             );
@@ -645,91 +555,13 @@ export const MyServicesScreen = ({ navigation, route }: any) => {
                                                     style={{ marginBottom: 16 }}
                                                 />
                                             )}
-
-                                        {/* Agenda Preview */}
-                                        <View style={styles.bbqAvailabilityContainer}>
-                                            <Text style={styles.bbqAvailabilityHeader}>Fechas reservadas recientemente:</Text>
-                                            {ad.bookings.length === 0 ? (
-                                                <Text style={{ fontSize: 12, color: Colors.muted }}>No hay reservas registradas.</Text>
-                                            ) : (
-                                                ad.bookings.map((bk: any, i: number) => (
-                                                    <View key={i} style={styles.bbqRow}>
-                                                        <Text style={styles.bbqDate}>{bk.date}</Text>
-                                                        <Text style={styles.bbqStatus}>{bk.timeSlot} ({bk.status})</Text>
-                                                    </View>
-                                                ))
-                                            )}
-                                        </View>
-
-                                        {/* Reservation form */}
-                                        <View style={styles.bookingForm}>
-                                            {Platform.OS === 'web' ? (
-                                                <input
-                                                    type="date"
-                                                    max={getTodayISO()}
-                                                    value={ad.selectedDate}
-                                                    onChange={(e) => setAmenityData(prev => ({
-                                                        ...prev,
-                                                        [type]: { ...prev[type], selectedDate: e.target.value }
-                                                    }))}
-                                                    style={{
-                                                        borderWidth: 1,
-                                                        borderColor: Colors.border,
-                                                        borderRadius: 10,
-                                                        paddingLeft: 12,
-                                                        paddingRight: 12,
-                                                        paddingTop: 9,
-                                                        paddingBottom: 9,
-                                                        fontSize: 14,
-                                                        color: Colors.text,
-                                                        backgroundColor: '#fff',
-                                                        width: '100%',
-                                                        boxSizing: 'border-box',
-                                                        outline: 'none',
-                                                    }}
-                                                />
-                                            ) : (
-                                                <>
-                                                    <TouchableOpacity
-                                                        style={styles.input}
-                                                        onPress={() => setDatePickerType(type)}
-                                                    >
-                                                        <Text style={{ color: ad.selectedDate ? Colors.text : Colors.muted }}>
-                                                            {ad.selectedDate || 'Selecciona una fecha'}
-                                                        </Text>
-                                                    </TouchableOpacity>
-                                                    {datePickerType === type && (
-                                                        <DateTimePicker
-                                                            value={ad.selectedDate ? new Date(ad.selectedDate) : new Date()}
-                                                            mode="date"
-                                                            maximumDate={new Date()}
-                                                            onChange={(event: DateTimePickerEvent, date?: Date) => {
-                                                                setDatePickerType(null);
-                                                                if (event.type !== 'set' || !date) return;
-                                                                setAmenityData(prev => ({
-                                                                    ...prev,
-                                                                    [type]: { ...prev[type], selectedDate: toISODate(date) }
-                                                                }));
-                                                            }}
-                                                        />
-                                                    )}
-                                                </>
-                                            )}
-                                            <ActionButton
-                                                config={s.button_config}
-                                                label={`Reservar ${cfg.label}`}
-                                                onPress={() => handleReserveAmenity(type, s.serviceId)}
-                                                disabled={s.status !== 'ACTIVE' || actionLoading}
-                                                loading={actionLoading}
-                                            />
-                                        </View>
                                     </View>
                                 </View>
                             ));
                         })}
 
                         {/* ==========================================
-                            PARKING VEHICLES AND VISITOR CODES
+                            PARKING RESIDENT VEHICLES
                            ========================================== */}
                         {activeSection === 'parking' && (
                             <View style={styles.serviceCard}>
@@ -737,12 +569,12 @@ export const MyServicesScreen = ({ navigation, route }: any) => {
                                     <Zap size={22} color={Colors.primary} />
                                     <View style={styles.cardHeaderTitleContainer}>
                                         <Text style={styles.cardTitle}>Parqueadero y Control Vehicular</Text>
-                                        <Text style={styles.cardSubtitle}>Mis vehículos y accesos de visitantes</Text>
+                                        <Text style={styles.cardSubtitle}>Mis vehículos registrados</Text>
                                     </View>
                                 </View>
                                 <View style={styles.cardBody}>
                                     {/* Resident vehicles list */}
-                                    <Text style={styles.cardTextHeader}>Vehículos Autorizados:</Text>
+                                    <Text style={styles.cardTextHeader}>Vehículos Autorizados ({vehicles.length}/2):</Text>
                                     {vehicles.length === 0 ? (
                                         <Text style={{ fontSize: 12, color: Colors.muted }}>Aún no tienes vehículos registrados.</Text>
                                     ) : (
@@ -750,6 +582,13 @@ export const MyServicesScreen = ({ navigation, route }: any) => {
                                             <View key={i} style={styles.vehicleRow}>
                                                 <Text style={styles.vehiclePlate}>{v.plate}</Text>
                                                 <Text style={styles.vehicleDesc}>{v.brand} {v.model} ({v.color})</Text>
+                                                <TouchableOpacity
+                                                    onPress={() => handleDeleteVehicle(v.plate)}
+                                                    style={{ marginLeft: 'auto', padding: 6 }}
+                                                    disabled={actionLoading}
+                                                >
+                                                    <Trash2 size={16} color={Colors.error} />
+                                                </TouchableOpacity>
                                             </View>
                                         ))
                                     )}
@@ -787,52 +626,12 @@ export const MyServicesScreen = ({ navigation, route }: any) => {
                                         />
                                         <ActionButton
                                             config={{}}
-                                            label="Agregar Vehículo"
+                                            label={vehicles.length >= 2 ? "Máximo 2 vehículos" : "Agregar Vehículo"}
                                             onPress={handleAddVehicle}
-                                            disabled={actionLoading}
+                                            disabled={actionLoading || vehicles.length >= 2}
                                             loading={actionLoading}
                                         />
                                     </View>
-
-                                    {/* Generate visitor code */}
-                                    <Text style={[styles.cardTextHeader, { marginTop: 16 }]}>Generar Acceso para Visitante:</Text>
-                                    <View style={styles.parkingForm}>
-                                        <TextInput
-                                            style={styles.input}
-                                            placeholder="Placa del visitante (Ej. DEF-456)"
-                                            value={visitorPlate}
-                                            onChangeText={setVisitorPlate}
-                                            placeholderTextColor={Colors.muted}
-                                        />
-                                        <TextInput
-                                            style={styles.input}
-                                            placeholder="Nombre del visitante (Ej. Juan Pérez)"
-                                            value={visitorName}
-                                            onChangeText={setVisitorName}
-                                            placeholderTextColor={Colors.muted}
-                                        />
-                                        <TouchableOpacity
-                                            style={styles.actionBtn}
-                                            disabled={actionLoading}
-                                            onPress={handleGenerateVisitorAccess}
-                                        >
-                                            <Key size={16} color="#fff" style={{ marginRight: 6 }} />
-                                            <Text style={styles.actionBtnText}>Generar Código Visita</Text>
-                                        </TouchableOpacity>
-                                    </View>
-
-                                    {/* Generated visitor codes history */}
-                                    {tempCodes.length > 0 && (
-                                        <View style={{ marginTop: 12 }}>
-                                            <Text style={styles.cardTextHeader}>Códigos Temporales Activos:</Text>
-                                            {tempCodes.map((code, idx) => (
-                                                <View key={idx} style={styles.codeRow}>
-                                                    <Text style={styles.codeText}>{code.accessCode} - Placa: {code.plate}</Text>
-                                                    <Text style={styles.codeExpiry}>Vence: {new Date(code.validUntil).toLocaleTimeString()}</Text>
-                                                </View>
-                                            ))}
-                                        </View>
-                                    )}
                                 </View>
                             </View>
                         )}
