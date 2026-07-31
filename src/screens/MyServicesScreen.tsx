@@ -42,6 +42,18 @@ const AMENITY_CONFIG: Record<string, { label: string, searchTerm: string, subtit
     salon: { label: 'Salón', searchTerm: 'SALÓN', subtitle: 'Reservas de salón de eventos' },
 };
 
+const getTodayISO = () => {
+    const d = new Date();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${d.getFullYear()}-${m}-${day}`;
+};
+
+const formatFecha = (fecha: string) => {
+    const [yy, mm, dd] = (fecha || '').split('-');
+    return dd && mm && yy ? `${dd}/${mm}/${yy}` : fecha;
+};
+
 export const MyServicesScreen = ({ navigation, route }: any) => {
     const { token } = useAuth();
     const [loading, setLoading] = useState(false);
@@ -70,6 +82,12 @@ export const MyServicesScreen = ({ navigation, route }: any) => {
     // Parking states
     const [vehicles, setVehicles] = useState<any[]>([]);
     const [newVehicle, setNewVehicle] = useState({ plate: '', brand: '', model: '', color: '' });
+
+    // Reservation states
+    const [reservations, setReservations] = useState<Record<string, any[]>>({});
+    const [reservationsLoading, setReservationsLoading] = useState<Record<string, boolean>>({});
+    const [reservationSubmitting, setReservationSubmitting] = useState(false);
+    const [reservationForm, setReservationForm] = useState({ fecha: '', horaInicio: '', horaFin: '', numPersonas: '1' });
 
     const API_URL = Config.API_URL;
 
@@ -102,7 +120,10 @@ export const MyServicesScreen = ({ navigation, route }: any) => {
                 setServices(uniqueServices);
                 
                 // Configurar servicio por defecto para QR
-                const qrService = data.find((s: any) => s.category === 'AMENITIES' || s.provider === 'QR_ACCESS');
+                const qrService = data.find((s: any) =>
+                    (s.category === 'AMENITIES' || s.provider === 'QR_ACCESS') &&
+                    s.button_config?.mode !== 'reserve'
+                );
                 if (qrService) {
                     setSelectedServiceForQr(qrService.serviceId);
                 }
@@ -148,9 +169,27 @@ export const MyServicesScreen = ({ navigation, route }: any) => {
         if (['pool', 'gym', 'bbq', 'salon'].includes(activeSection)) {
             const cfg = AMENITY_CONFIG[activeSection];
             const match = services.find(s =>
-                s.category === 'AMENITIES' && s.serviceName.toUpperCase().includes(cfg.searchTerm)
+                s.category === 'AMENITIES' &&
+                s.button_config?.mode !== 'reserve' &&
+                s.serviceName.toUpperCase().includes(cfg.searchTerm)
             );
             if (match) setSelectedServiceForQr(match.serviceId);
+        }
+    }, [activeSection, services]);
+
+    // Cargar reservas de servicios en modo reserva según pestaña activa
+    useEffect(() => {
+        if (['pool', 'gym', 'bbq', 'salon'].includes(activeSection)) {
+            const cfg = AMENITY_CONFIG[activeSection];
+            services
+                .filter(s =>
+                    s.category === 'AMENITIES' &&
+                    s.button_config?.mode === 'reserve' &&
+                    s.serviceName.toUpperCase().includes(cfg.searchTerm)
+                )
+                .forEach(s => {
+                    if (!reservations[s.serviceId]) fetchReservations(s.serviceId);
+                });
         }
     }, [activeSection, services]);
 
@@ -291,6 +330,99 @@ export const MyServicesScreen = ({ navigation, route }: any) => {
             showAlert('Error de Red', 'Revisa tu conexión.', 'error');
         } finally {
             setActionLoading(false);
+        }
+    };
+
+    // ==========================================
+    // RESERVATIONS (BBQ / SALÓN)
+    // ==========================================
+
+    const fetchReservations = async (serviceId: string) => {
+        setReservationsLoading(prev => ({ ...prev, [serviceId]: true }));
+        try {
+            const response = await fetch(`${API_URL}/resident-services/reservas?serviceId=${encodeURIComponent(serviceId)}`, {
+                cache: 'no-cache',
+                headers: { 'Authorization': `Bearer ${token}` },
+            });
+            if (response.ok) {
+                const data = await response.json();
+                setReservations(prev => ({ ...prev, [serviceId]: data }));
+            }
+        } catch (error) {
+            console.error('Error fetching reservations:', error);
+        } finally {
+            setReservationsLoading(prev => ({ ...prev, [serviceId]: false }));
+        }
+    };
+
+    const handleCreateReservation = async (serviceId: string) => {
+        if (!reservationForm.fecha || !reservationForm.horaInicio || !reservationForm.horaFin) {
+            showAlert('Campos Requeridos', 'Completa la fecha (AAAA-MM-DD), la hora de inicio y la hora final (HH:mm).', 'warning');
+            return;
+        }
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(reservationForm.fecha)) {
+            showAlert('Fecha Inválida', 'La fecha debe tener el formato AAAA-MM-DD.', 'warning');
+            return;
+        }
+        if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(reservationForm.horaInicio) ||
+            !/^([01]\d|2[0-3]):[0-5]\d$/.test(reservationForm.horaFin)) {
+            showAlert('Hora Inválida', 'Las horas deben tener el formato HH:mm.', 'warning');
+            return;
+        }
+        setReservationSubmitting(true);
+        try {
+            const response = await fetch(`${API_URL}/resident-services/reservas`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`,
+                },
+                body: JSON.stringify({
+                    serviceId,
+                    fecha: reservationForm.fecha,
+                    horaInicio: reservationForm.horaInicio,
+                    horaFin: reservationForm.horaFin,
+                    numPersonas: parseInt(reservationForm.numPersonas, 10) || 1,
+                }),
+            });
+            const data = await response.json();
+            if (response.ok) {
+                setReservations(prev => {
+                    const list = [...(prev[serviceId] || []), data];
+                    list.sort((a, b) => (a.fecha + a.horaInicio).localeCompare(b.fecha + b.horaInicio));
+                    return { ...prev, [serviceId]: list };
+                });
+                setReservationForm({ fecha: '', horaInicio: '', horaFin: '', numPersonas: '1' });
+            } else {
+                showAlert('Error', data.message || 'No se pudo crear la reserva.', 'error');
+            }
+        } catch (error) {
+            showAlert('Error de Red', 'Revisa tu conexión.', 'error');
+        } finally {
+            setReservationSubmitting(false);
+        }
+    };
+
+    const handleCancelReservation = async (serviceId: string, reservaId: string) => {
+        setReservationSubmitting(true);
+        try {
+            const response = await fetch(`${API_URL}/resident-services/reservas/${reservaId}`, {
+                method: 'DELETE',
+                headers: { 'Authorization': `Bearer ${token}` },
+            });
+            if (response.ok) {
+                setReservations(prev => ({
+                    ...prev,
+                    [serviceId]: (prev[serviceId] || []).filter(r => r.id !== reservaId),
+                }));
+            } else {
+                const data = await response.json().catch(() => ({}));
+                showAlert('Error', data.message || 'No se pudo cancelar la reserva.', 'error');
+            }
+        } catch (error) {
+            showAlert('Error de Red', 'Revisa tu conexión.', 'error');
+        } finally {
+            setReservationSubmitting(false);
         }
     };
 
@@ -530,8 +662,85 @@ export const MyServicesScreen = ({ navigation, route }: any) => {
                                     <View style={styles.cardBody}>
                                         <Text style={styles.cardText}>{s.description}</Text>
 
-                                        {/* QR Generator */}
-                                            {qrCode && selectedServiceForQr === s.serviceId ? (
+                                        {s.button_config?.mode === 'reserve' ? (
+                                            /* Reservations module */
+                                            <View style={styles.reservaSection}>
+                                                <Text style={styles.cardTextHeader}>Reservas Próximas</Text>
+                                                {reservationsLoading[s.serviceId] ? (
+                                                    <ActivityIndicator size="small" color={Colors.primary} style={{ marginVertical: 8 }} />
+                                                ) : (reservations[s.serviceId] || []).length === 0 ? (
+                                                    <Text style={{ fontSize: 12, color: Colors.muted }}>No hay reservas próximas.</Text>
+                                                ) : (
+                                                    (reservations[s.serviceId] || []).map(r => (
+                                                        <View key={r.id} style={[styles.reservaRow, r.isMine && styles.reservaRowMine]}>
+                                                            <View style={{ flex: 1 }}>
+                                                                <Text style={styles.reservaFecha}>
+                                                                    {formatFecha(r.fecha)} · {r.horaInicio} - {r.horaFin}
+                                                                </Text>
+                                                                <Text style={styles.reservaDetalle}>
+                                                                    Vivienda {r.viviendaIdentificador || '—'} · {r.propietarioNombre} · {r.numPersonas} persona(s)
+                                                                </Text>
+                                                            </View>
+                                                            {r.isMine && (
+                                                                <TouchableOpacity
+                                                                    onPress={() => handleCancelReservation(s.serviceId, r.id)}
+                                                                    disabled={reservationSubmitting}
+                                                                    style={{ padding: 6 }}
+                                                                >
+                                                                    <Trash2 size={16} color={Colors.error} />
+                                                                </TouchableOpacity>
+                                                            )}
+                                                        </View>
+                                                    ))
+                                                )}
+
+                                                <Text style={[styles.cardTextHeader, { marginTop: 16 }]}>Realizar Reserva</Text>
+                                                <View style={styles.parkingForm}>
+                                                    <TextInput
+                                                        style={styles.input}
+                                                        placeholder="Fecha (AAAA-MM-DD)"
+                                                        value={reservationForm.fecha}
+                                                        onChangeText={(t) => setReservationForm(prev => ({ ...prev, fecha: t }))}
+                                                        placeholderTextColor={Colors.muted}
+                                                        autoCapitalize="none"
+                                                        autoCorrect={false}
+                                                    />
+                                                    <View style={{ flexDirection: 'row', gap: 8 }}>
+                                                        <TextInput
+                                                            style={[styles.input, { flex: 1 }]}
+                                                            placeholder="Inicio (HH:mm)"
+                                                            value={reservationForm.horaInicio}
+                                                            onChangeText={(t) => setReservationForm(prev => ({ ...prev, horaInicio: t }))}
+                                                            placeholderTextColor={Colors.muted}
+                                                        />
+                                                        <TextInput
+                                                            style={[styles.input, { flex: 1 }]}
+                                                            placeholder="Fin (HH:mm)"
+                                                            value={reservationForm.horaFin}
+                                                            onChangeText={(t) => setReservationForm(prev => ({ ...prev, horaFin: t }))}
+                                                            placeholderTextColor={Colors.muted}
+                                                        />
+                                                    </View>
+                                                    <TextInput
+                                                        style={styles.input}
+                                                        placeholder="Número de personas"
+                                                        keyboardType="numeric"
+                                                        value={reservationForm.numPersonas}
+                                                        onChangeText={(t) => setReservationForm(prev => ({ ...prev, numPersonas: t }))}
+                                                        placeholderTextColor={Colors.muted}
+                                                    />
+                                                    <ActionButton
+                                                        config={{}}
+                                                        label={`Reservar ${cfg.label}`}
+                                                        onPress={() => handleCreateReservation(s.serviceId)}
+                                                        disabled={s.status !== 'ACTIVE' || reservationSubmitting}
+                                                        loading={reservationSubmitting}
+                                                    />
+                                                </View>
+                                            </View>
+                                        ) : (
+                                            /* QR Generator */
+                                            qrCode && selectedServiceForQr === s.serviceId ? (
                                                 <View style={styles.qrContainer}>
                                                     {qrImageUrl ? (
                                                         <Image source={{ uri: qrImageUrl }} style={styles.qrImage} />
@@ -554,7 +763,8 @@ export const MyServicesScreen = ({ navigation, route }: any) => {
                                                     loading={actionLoading}
                                                     style={{ marginBottom: 16 }}
                                                 />
-                                            )}
+                                            )
+                                        )}
                                     </View>
                                 </View>
                             ));
@@ -1006,6 +1216,33 @@ const styles = StyleSheet.create({
     parkingForm: {
         gap: 10,
         marginBottom: 12,
+    },
+    reservaSection: {
+        width: '100%',
+    },
+    reservaRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: Colors.secondary,
+        padding: 12,
+        borderRadius: 10,
+        marginBottom: 8,
+        borderWidth: 1,
+        borderColor: Colors.border,
+    },
+    reservaRowMine: {
+        backgroundColor: '#eff6ff',
+        borderColor: '#bfdbfe',
+    },
+    reservaFecha: {
+        fontSize: 13,
+        fontWeight: 'bold',
+        color: Colors.text,
+    },
+    reservaDetalle: {
+        fontSize: 12,
+        color: Colors.muted,
+        marginTop: 2,
     },
     codeRow: {
         flexDirection: 'row',
