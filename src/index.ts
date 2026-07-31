@@ -17,7 +17,7 @@ export { DoorbellSettingsModal } from './components/DoorbellSettingsModal';
 
 export { default as api, setStorageProvider, getStorage } from './lib/api';
 export { initAnalytics, trackPageView, trackEvent } from './lib/analytics';
-export { registerForPushNotificationsAsync, ensureNotificationChannelsAsync, updateAppBadge, setupNotificationHandler, addNotificationResponseListener } from './lib/notifications';
+export { registerForPushNotificationsAsync, ensureNotificationChannelsAsync, updateAppBadge, setupNotificationHandler } from './lib/notifications';
 
 export { playDoorbellSound } from './utils/sounds';
 

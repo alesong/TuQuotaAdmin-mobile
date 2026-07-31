@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { View, StyleSheet, LogBox } from 'react-native';
+import { StyleSheet, LogBox } from 'react-native';
 
 LogBox.ignoreLogs([
   'InteractionManager has been deprecated',
@@ -9,8 +9,8 @@ import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { NavigationContainer } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Constants from 'expo-constants';
-import * as Notifications from 'expo-notifications';
-import { AuthProvider, useAuth, AlertProvider, initializeConfig, registerAssets, registerForPushNotificationsAsync, setStorageProvider, setupNotificationHandler, addNotificationResponseListener, DoorbellProvider } from './src/index';
+import { AuthProvider, useAuth, AlertProvider, initializeConfig, registerAssets, registerForPushNotificationsAsync, setStorageProvider, setupNotificationHandler, DoorbellProvider } from './src/index';
+import NotificationDeepLinkHandler from './src/components/NotificationDeepLinkHandler';
 import { navigationRef } from './src/navigation/RootNavigation';
 import { AppNavigator } from './src/navigation/AppNavigator';
 
@@ -53,39 +53,10 @@ function PushRegistration() {
 
 export default function App() {
   console.log("Rendering App");
-  const notificationListener = useRef<{ remove: () => void } | null>(null);
 
   useEffect(() => {
     setupNotificationHandler();
-
-    notificationListener.current = addNotificationResponseListener(response => {
-      const data = response.notification?.request?.content?.data;
-      if (data?.type === 'doorbell') {
-        const navigate = navigationRef.current?.navigate;
-        if (navigate && data.url) {
-          navigate('MyServices' as any, { initialSection: 'cameras' });
-        }
-      }
-    });
-
-    return () => {
-      notificationListener.current?.remove();
-    };
   }, []);
-
-  const lastNotificationResponse = Notifications.useLastNotificationResponse();
-
-  useEffect(() => {
-    if (
-      lastNotificationResponse &&
-      lastNotificationResponse.notification.request.content.data?.type === 'doorbell'
-    ) {
-      const navigate = navigationRef.current?.navigate;
-      if (navigate) {
-        navigate('MyServices' as any, { initialSection: 'cameras' });
-      }
-    }
-  }, [lastNotificationResponse]);
 
   return (
     <SafeAreaProvider>
@@ -93,6 +64,7 @@ export default function App() {
         <StatusBar style="auto" />
         <AuthProvider>
           <PushRegistration />
+          <NotificationDeepLinkHandler />
           <DoorbellProvider>
           <AlertProvider>
             <NavigationContainer ref={navigationRef}>

@@ -24,27 +24,11 @@ function urlBase64ToUint8Array(base64String: string) {
 }
 
 const CHANNEL_DEFAULT = 'default_v2';
-const CHANNEL_DOORBELL = 'doorbell_v2';
-
-const DOORBELL_PREFS_KEY = '@TuQuotaAdmin:doorbellPrefs';
 
 export async function ensureNotificationChannelsAsync() {
   if (Platform.OS !== 'android' || isExpoGo) return;
   try {
     await Notifications.deleteNotificationChannelAsync('default');
-    await Notifications.deleteNotificationChannelAsync('doorbell');
-  } catch {}
-  let doorbellSound = 'doorbell.wav';
-  try {
-    const stored = await AsyncStorage.getItem(DOORBELL_PREFS_KEY);
-    if (stored) {
-      const parsed = JSON.parse(stored);
-      if (parsed.enabled === false) {
-        doorbellSound = null;
-      } else if (parsed.sound) {
-        doorbellSound = parsed.sound;
-      }
-    }
   } catch {}
   try {
     await Notifications.setNotificationChannelAsync(CHANNEL_DEFAULT, {
@@ -53,15 +37,8 @@ export async function ensureNotificationChannelsAsync() {
       vibrationPattern: [0, 250, 250, 250],
       lightColor: '#6366f1',
     });
-    await Notifications.setNotificationChannelAsync(CHANNEL_DOORBELL, {
-      name: 'Timbre',
-      importance: Notifications.AndroidImportance.MAX,
-      vibrationPattern: [0, 500, 200, 500],
-      lightColor: '#6366f1',
-      sound: doorbellSound,
-    });
   } catch {
-    console.log('Could not create notification channels');
+    console.log('Could not create default notification channel');
   }
 }
 
@@ -164,23 +141,9 @@ export async function setupNotificationHandler() {
     Notifications.setNotificationHandler({
       handleNotification: async (notification) => {
         const isDoorbell = notification.request.content.data?.type === 'doorbell';
-        let shouldPlaySound = true;
-
-        if (isDoorbell) {
-          try {
-            const stored = await AsyncStorage.getItem(DOORBELL_PREFS_KEY);
-            if (stored) {
-              const parsed = JSON.parse(stored);
-              if (parsed.enabled === false) {
-                shouldPlaySound = false;
-              }
-            }
-          } catch {}
-        }
-
         return {
           shouldShowAlert: true,
-          shouldPlaySound,
+          shouldPlaySound: !isDoorbell,
           shouldSetBadge: true,
           shouldShowBanner: true,
           shouldShowList: true,

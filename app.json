@@ -53,7 +53,8 @@
         {
           "enableBackgroundPlayback": true
         }
-      ]
+      ],
+      "expo-video"
     ],
     "extra": {
       "GOOGLE_CLIENT_ID": "39320229944-e8101biu39m6veb6uhggbqtt3jln97sl.apps.googleusercontent.com",

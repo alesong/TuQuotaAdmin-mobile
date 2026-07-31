@@ -7,6 +7,8 @@ import { useAuth } from './AuthContext';
 import * as Notifications from 'expo-notifications';
 import { playDoorbellSound } from '../utils/sounds';
 
+const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
 const PREFS_KEY = '@TuQuotaAdmin:doorbellPrefs';
 
 export interface DoorbellPreferences {
@@ -43,7 +45,10 @@ async function applyChannelPreferences(prefs: DoorbellPreferences) {
   if (Platform.OS !== 'android') return;
   try {
     await Notifications.deleteNotificationChannelAsync('doorbell_v2');
-  } catch {}
+    await delay(200);
+  } catch (e) {
+    console.warn('No se pudo eliminar el canal doorbell_v2 (puede no existir):', e);
+  }
   try {
     await Notifications.setNotificationChannelAsync('doorbell_v2', {
       name: 'Timbre',
@@ -67,17 +72,13 @@ export function DoorbellProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     AsyncStorage.getItem(PREFS_KEY).then(stored => {
-      if (stored) {
-        try {
-          const parsed = JSON.parse(stored) as DoorbellPreferences;
-          const merged = { ...DEFAULT_PREFS, ...parsed };
-          setPreferences(merged);
-          prefsRef.current = merged;
-          applyChannelPreferences(merged);
-        } catch {}
-      } else {
-        applyChannelPreferences(DEFAULT_PREFS);
-      }
+      try {
+        const parsed = stored ? JSON.parse(stored) as DoorbellPreferences : {};
+        const merged = { ...DEFAULT_PREFS, ...parsed };
+        setPreferences(merged);
+        prefsRef.current = merged;
+        applyChannelPreferences(merged);
+      } catch {}
     });
   }, []);
 
@@ -159,7 +160,11 @@ export function DoorbellProvider({ children }: { children: React.ReactNode }) {
   const updatePreferences = useCallback(async (prefs: DoorbellPreferences) => {
     setPreferences(prefs);
     prefsRef.current = prefs;
-    await AsyncStorage.setItem(PREFS_KEY, JSON.stringify(prefs));
+    try {
+      await AsyncStorage.setItem(PREFS_KEY, JSON.stringify(prefs));
+    } catch (e) {
+      console.error('Error al guardar preferencias del timbre:', e);
+    }
     await applyChannelPreferences(prefs);
   }, []);
 

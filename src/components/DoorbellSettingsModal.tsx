@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -32,6 +32,11 @@ export function DoorbellSettingsModal({ visible, onClose, preferences, onUpdate 
   const [enabled, setEnabled] = useState(preferences.enabled);
   const [selectedSound, setSelectedSound] = useState(preferences.sound);
 
+  useEffect(() => {
+    setEnabled(preferences.enabled);
+    setSelectedSound(preferences.sound);
+  }, [preferences.enabled, preferences.sound]);
+
   const handleToggle = async (value: boolean) => {
     setEnabled(value);
     await onUpdate({ enabled: value, sound: selectedSound });
@@ -39,8 +44,12 @@ export function DoorbellSettingsModal({ visible, onClose, preferences, onUpdate 
 
   const handleSoundSelect = async (sound: string) => {
     setSelectedSound(sound);
-    await onUpdate({ enabled, sound });
     playDoorbellSound(sound);
+    try {
+      await onUpdate({ enabled, sound });
+    } catch (e) {
+      console.error('Error al guardar preferencia de sonido:', e);
+    }
   };
 
   const handleClose = () => {
@@ -51,6 +60,7 @@ export function DoorbellSettingsModal({ visible, onClose, preferences, onUpdate 
 
   return (
     <Modal
+      key={String(visible)}
       visible={visible}
       transparent
       animationType="fade"
