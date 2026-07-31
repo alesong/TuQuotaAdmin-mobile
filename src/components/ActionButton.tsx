@@ -55,8 +55,8 @@ export const ActionButton = ({
   const imageUrl = config?.imageUrl;
   const imageSize = config?.imageSize || 'cover';
 
-  const iconName = icon || config?.icon || '';
-  const labelText = label || config?.label || '';
+  const iconName = config?.icon || icon || '';
+  const labelText = config?.label || label || '';
 
   const IconComponent = ICON_MAP[iconName];
 
