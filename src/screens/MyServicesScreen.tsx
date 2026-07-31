@@ -481,7 +481,7 @@ export const MyServicesScreen = ({ navigation, route }: any) => {
                                         </Text>
                                     </View>
                                     <View style={styles.cardBody}>
-                                        <Text style={styles.cardText}>{s.description || 'Acciona la apertura automática del portón desde tu celular.'}</Text>
+                                        <Text style={styles.cardText}>{s.description}</Text>
                                         
                                         <ActionButton
                                             config={s.button_config}
@@ -581,7 +581,7 @@ export const MyServicesScreen = ({ navigation, route }: any) => {
                                         </Text>
                                     </View>
                                     <View style={styles.cardBody}>
-                                        <Text style={styles.cardText}>{s.description || 'Genera un código QR dinámico de un solo uso para registrar tu ingreso o reserva tu espacio directamente.'}</Text>
+                                        <Text style={styles.cardText}>{s.description}</Text>
 
                                         {/* QR Generator */}
                                             {qrCode && selectedServiceForQr === s.serviceId ? (
@@ -753,7 +753,7 @@ export const MyServicesScreen = ({ navigation, route }: any) => {
                                                 </View>
                                                 <View style={styles.cardBody}>
                                                     <Text style={styles.cardText}>
-                                                        {s.description || 'Sin descripción adicional.'}
+                                                        {s.description}
                                                     </Text>
                                                 </View>
                                             </View>
