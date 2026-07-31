@@ -730,7 +730,7 @@ export const MyServicesScreen = ({ navigation, route }: any) => {
                                                         placeholderTextColor={Colors.muted}
                                                     />
                                                     <ActionButton
-                                                        config={{}}
+                                                        config={s.button_config}
                                                         label={`Reservar ${cfg.label}`}
                                                         onPress={() => handleCreateReservation(s.serviceId)}
                                                         disabled={s.status !== 'ACTIVE' || reservationSubmitting}
