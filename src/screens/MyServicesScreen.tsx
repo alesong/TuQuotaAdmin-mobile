@@ -10,6 +10,7 @@ import {
     Platform,
     Image,
 } from 'react-native';
+import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import { useFocusEffect } from '@react-navigation/native';
 import {
     ArrowLeft,
@@ -40,6 +41,14 @@ const AMENITY_CONFIG: Record<string, { label: string, searchTerm: string, subtit
     bbq: { label: 'BBQ', searchTerm: 'BBQ', subtitle: 'Reservas y agenda de área social' },
     salon: { label: 'Salón', searchTerm: 'SALÓN', subtitle: 'Reservas de salón de eventos' },
 };
+
+const toISODate = (d: Date) => {
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${d.getFullYear()}-${m}-${day}`;
+};
+
+const getTodayISO = () => toISODate(new Date());
 
 export const MyServicesScreen = ({ navigation, route }: any) => {
     const { token } = useAuth();
@@ -73,12 +82,14 @@ export const MyServicesScreen = ({ navigation, route }: any) => {
         bbq: { bookings: [], selectedDate: '', selectedSlot: '12:00 - 18:00' },
         salon: { bookings: [], selectedDate: '', selectedSlot: '12:00 - 18:00' },
     });
+    const [datePickerType, setDatePickerType] = useState<string | null>(null);
 
     // Parking states
     const [vehicles, setVehicles] = useState<any[]>([]);
     const [visitorPlate, setVisitorPlate] = useState('');
     const [visitorName, setVisitorName] = useState('');
     const [tempCodes, setTempCodes] = useState<any[]>([]);
+    const [newVehicle, setNewVehicle] = useState({ plate: '', brand: '', model: '', color: '' });
 
     const API_URL = Config.API_URL;
 
@@ -223,7 +234,7 @@ export const MyServicesScreen = ({ navigation, route }: any) => {
             });
             const data = await response.json();
             if (response.ok && data.success) {
-                showAlert(serviceName, `Apertura enviada con éxito a ${serviceName}.`, 'success');
+                // Apertura enviada; sin alerta de confirmación
             } else {
                 showAlert('Error', data.message || 'No se pudo abrir el portón.', 'error');
             }
@@ -258,7 +269,6 @@ export const MyServicesScreen = ({ navigation, route }: any) => {
                 setQrCode(data.qrString);
                 setQrExpiry(data.expiresAt);
                 setQrCountdown(300); // 5 minutos (300 segundos)
-                showAlert('QR Generado', 'Muestre este código en la lectora de la portería o zona común.', 'success');
             } else {
                 showAlert('Acceso Suspendido', data.message || 'No se pudo generar el código QR.', 'error');
             }
@@ -295,7 +305,6 @@ export const MyServicesScreen = ({ navigation, route }: any) => {
             });
             const data = await response.json();
             if (response.ok && data.success) {
-                showAlert('Reserva Creada', `Reserva confirmada para ${AMENITY_CONFIG[type].label} el día ${data.date} en el horario ${data.timeSlot}.`, 'success');
                 setAmenityData(prev => ({ ...prev, [type]: { ...prev[type], selectedDate: '' } }));
                 fetchAmenityAvailability(type);
             } else {
@@ -311,6 +320,35 @@ export const MyServicesScreen = ({ navigation, route }: any) => {
     // ==========================================
     // PARKING ACTION
     // ==========================================
+
+    const handleAddVehicle = async () => {
+        if (!newVehicle.plate.trim()) {
+            showAlert('Placa Requerida', 'Ingresa la placa del vehículo.', 'warning');
+            return;
+        }
+        setActionLoading(true);
+        try {
+            const response = await fetch(`${API_URL}/resident-services/parqueadero/vehiculos`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`,
+                },
+                body: JSON.stringify(newVehicle),
+            });
+            const data = await response.json();
+            if (response.ok && data.success) {
+                setVehicles(data.vehicles);
+                setNewVehicle({ plate: '', brand: '', model: '', color: '' });
+            } else {
+                showAlert('Error', data.message || 'No se pudo agregar el vehículo.', 'error');
+            }
+        } catch (error) {
+            showAlert('Error de Red', 'Revisa tu conexión.', 'error');
+        } finally {
+            setActionLoading(false);
+        }
+    };
 
     const handleGenerateVisitorAccess = async () => {
         if (!visitorPlate) {
@@ -332,7 +370,6 @@ export const MyServicesScreen = ({ navigation, route }: any) => {
             });
             const data = await response.json();
             if (response.ok && data.success) {
-                showAlert('Acceso Creado', `Se generó el código temporal ${data.accessCode} para el vehículo ${visitorPlate}.`, 'success');
                 setTempCodes(prev => [data, ...prev]);
                 setVisitorPlate('');
                 setVisitorName('');
@@ -626,16 +663,58 @@ export const MyServicesScreen = ({ navigation, route }: any) => {
 
                                         {/* Reservation form */}
                                         <View style={styles.bookingForm}>
-                                            <TextInput
-                                                style={styles.input}
-                                                placeholder="Fecha AAAA-MM-DD (Ej. 2026-06-20)"
-                                                value={ad.selectedDate}
-                                                onChangeText={(val) => setAmenityData(prev => ({
-                                                    ...prev,
-                                                    [type]: { ...prev[type], selectedDate: val }
-                                                }))}
-                                                placeholderTextColor={Colors.muted}
-                                            />
+                                            {Platform.OS === 'web' ? (
+                                                <input
+                                                    type="date"
+                                                    max={getTodayISO()}
+                                                    value={ad.selectedDate}
+                                                    onChange={(e) => setAmenityData(prev => ({
+                                                        ...prev,
+                                                        [type]: { ...prev[type], selectedDate: e.target.value }
+                                                    }))}
+                                                    style={{
+                                                        borderWidth: 1,
+                                                        borderColor: Colors.border,
+                                                        borderRadius: 10,
+                                                        paddingLeft: 12,
+                                                        paddingRight: 12,
+                                                        paddingTop: 9,
+                                                        paddingBottom: 9,
+                                                        fontSize: 14,
+                                                        color: Colors.text,
+                                                        backgroundColor: '#fff',
+                                                        width: '100%',
+                                                        boxSizing: 'border-box',
+                                                        outline: 'none',
+                                                    }}
+                                                />
+                                            ) : (
+                                                <>
+                                                    <TouchableOpacity
+                                                        style={styles.input}
+                                                        onPress={() => setDatePickerType(type)}
+                                                    >
+                                                        <Text style={{ color: ad.selectedDate ? Colors.text : Colors.muted }}>
+                                                            {ad.selectedDate || 'Selecciona una fecha'}
+                                                        </Text>
+                                                    </TouchableOpacity>
+                                                    {datePickerType === type && (
+                                                        <DateTimePicker
+                                                            value={ad.selectedDate ? new Date(ad.selectedDate) : new Date()}
+                                                            mode="date"
+                                                            maximumDate={new Date()}
+                                                            onChange={(event: DateTimePickerEvent, date?: Date) => {
+                                                                setDatePickerType(null);
+                                                                if (event.type !== 'set' || !date) return;
+                                                                setAmenityData(prev => ({
+                                                                    ...prev,
+                                                                    [type]: { ...prev[type], selectedDate: toISODate(date) }
+                                                                }));
+                                                            }}
+                                                        />
+                                                    )}
+                                                </>
+                                            )}
                                             <ActionButton
                                                 config={s.button_config}
                                                 label={`Reservar ${cfg.label}`}
@@ -664,12 +743,56 @@ export const MyServicesScreen = ({ navigation, route }: any) => {
                                 <View style={styles.cardBody}>
                                     {/* Resident vehicles list */}
                                     <Text style={styles.cardTextHeader}>Vehículos Autorizados:</Text>
-                                    {vehicles.map((v, i) => (
-                                        <View key={i} style={styles.vehicleRow}>
-                                            <Text style={styles.vehiclePlate}>{v.plate}</Text>
-                                            <Text style={styles.vehicleDesc}>{v.brand} {v.model} ({v.color})</Text>
-                                        </View>
-                                    ))}
+                                    {vehicles.length === 0 ? (
+                                        <Text style={{ fontSize: 12, color: Colors.muted }}>Aún no tienes vehículos registrados.</Text>
+                                    ) : (
+                                        vehicles.map((v, i) => (
+                                            <View key={i} style={styles.vehicleRow}>
+                                                <Text style={styles.vehiclePlate}>{v.plate}</Text>
+                                                <Text style={styles.vehicleDesc}>{v.brand} {v.model} ({v.color})</Text>
+                                            </View>
+                                        ))
+                                    )}
+
+                                    {/* Add my vehicle */}
+                                    <Text style={[styles.cardTextHeader, { marginTop: 16 }]}>Agregar Mi Vehículo:</Text>
+                                    <View style={styles.parkingForm}>
+                                        <TextInput
+                                            style={styles.input}
+                                            placeholder="Placa (Ej. ABC-123)"
+                                            value={newVehicle.plate}
+                                            onChangeText={(t) => setNewVehicle(prev => ({ ...prev, plate: t }))}
+                                            placeholderTextColor={Colors.muted}
+                                        />
+                                        <TextInput
+                                            style={styles.input}
+                                            placeholder="Marca (Ej. Mazda)"
+                                            value={newVehicle.brand}
+                                            onChangeText={(t) => setNewVehicle(prev => ({ ...prev, brand: t }))}
+                                            placeholderTextColor={Colors.muted}
+                                        />
+                                        <TextInput
+                                            style={styles.input}
+                                            placeholder="Modelo (Ej. CX-5)"
+                                            value={newVehicle.model}
+                                            onChangeText={(t) => setNewVehicle(prev => ({ ...prev, model: t }))}
+                                            placeholderTextColor={Colors.muted}
+                                        />
+                                        <TextInput
+                                            style={styles.input}
+                                            placeholder="Color (Ej. Gris)"
+                                            value={newVehicle.color}
+                                            onChangeText={(t) => setNewVehicle(prev => ({ ...prev, color: t }))}
+                                            placeholderTextColor={Colors.muted}
+                                        />
+                                        <ActionButton
+                                            config={{}}
+                                            label="Agregar Vehículo"
+                                            onPress={handleAddVehicle}
+                                            disabled={actionLoading}
+                                            loading={actionLoading}
+                                        />
+                                    </View>
 
                                     {/* Generate visitor code */}
                                     <Text style={[styles.cardTextHeader, { marginTop: 16 }]}>Generar Acceso para Visitante:</Text>

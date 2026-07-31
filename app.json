@@ -54,7 +54,8 @@
           "enableBackgroundPlayback": true
         }
       ],
-      "expo-video"
+      "expo-video",
+      "@react-native-community/datetimepicker"
     ],
     "extra": {
       "GOOGLE_CLIENT_ID": "39320229944-e8101biu39m6veb6uhggbqtt3jln97sl.apps.googleusercontent.com",
