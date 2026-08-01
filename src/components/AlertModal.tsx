@@ -8,7 +8,7 @@ export type AlertType = 'success' | 'error' | 'warning' | 'info';
 export interface AlertButton {
     text: string;
     onPress?: () => void;
-    style?: 'default' | 'cancel' | 'destructive';
+    style?: 'default' | 'cancel' | 'destructive' | 'link';
 }
 
 interface AlertModalProps {
@@ -87,22 +87,38 @@ export const AlertModal: React.FC<AlertModalProps> = ({
 
         return (
             <View style={styles.buttonContainer}>
-                {buttons.map((button, index) => (
-                    <Button
-                        key={index}
-                        title={button.text}
-                        onPress={() => {
-                            if (button.onPress) button.onPress();
-                            onClose();
-                        }}
-                        variant={button.style === 'cancel' ? 'outline' : (button.style === 'destructive' ? 'primary' : 'primary')}
-                        style={[
-                            styles.flexButton,
-                            button.style === 'destructive' && { backgroundColor: Colors.error },
-                            index > 0 && { marginLeft: 10 }
-                        ]}
-                    />
-                ))}
+                {buttons.map((button, index) => {
+                    if (button.style === 'link') {
+                        return (
+                            <TouchableOpacity
+                                key={index}
+                                style={[styles.linkButton, index > 0 && { marginLeft: 16 }]}
+                                onPress={() => {
+                                    if (button.onPress) button.onPress();
+                                    onClose();
+                                }}
+                            >
+                                <Text style={styles.linkButtonText}>{button.text}</Text>
+                            </TouchableOpacity>
+                        );
+                    }
+                    return (
+                        <Button
+                            key={index}
+                            title={button.text}
+                            onPress={() => {
+                                if (button.onPress) button.onPress();
+                                onClose();
+                            }}
+                            variant={button.style === 'cancel' ? 'outline' : (button.style === 'destructive' ? 'primary' : 'primary')}
+                            style={[
+                                styles.flexButton,
+                                button.style === 'destructive' && { backgroundColor: Colors.error },
+                                index > 0 && { marginLeft: 10 }
+                            ]}
+                        />
+                    );
+                })}
             </View>
         );
     };
@@ -187,5 +203,16 @@ const styles = StyleSheet.create({
     },
     flexButton: {
         flex: 1,
+    },
+    linkButton: {
+        paddingVertical: 12,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    linkButtonText: {
+        fontSize: 14,
+        fontWeight: '600',
+        color: Colors.primary,
+        textDecorationLine: 'underline',
     },
 });

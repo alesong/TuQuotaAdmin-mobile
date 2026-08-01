@@ -1,7 +1,7 @@
 import React from 'react';
 import { View, Text, StyleSheet, FlatList, TouchableOpacity, Alert, Linking, ScrollView, Modal, Clipboard, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { ArrowLeft, Clock, CheckCircle, XCircle, Building2, Copy, Upload, FileUp } from 'lucide-react-native';
+import { ArrowLeft, Clock, CheckCircle, XCircle, Building2, Copy, Upload, FileUp, Minus, Plus, Pencil } from 'lucide-react-native';
 import { Colors } from '../constants/Colors';
 import { Button } from '../components/Button';
 import { useAuth } from '../context/AuthContext';
@@ -12,7 +12,7 @@ import imageCompression from 'browser-image-compression';
 
 
 export const PaymentsScreen = ({ navigation, route }: any) => {
-    const { viviendaId, monto, cuotaIds, viviendasCount, condominioId } = route.params || {};
+    const { viviendaId, monto, cuotaIds, viviendasCount, condominioId, monthlyCuota: monthlyCuotaParam } = route.params || {};
     const { user, token } = useAuth();
     const { showAlert } = useAlert();
     const [loading, setLoading] = React.useState(false);
@@ -20,6 +20,9 @@ export const PaymentsScreen = ({ navigation, route }: any) => {
     const [brebReceiptUri, setBrebReceiptUri] = React.useState<string | null>(null);
     const [brebReceiptFile, setBrebReceiptFile] = React.useState<any>(null);
     const [brebSubmitting, setBrebSubmitting] = React.useState(false);
+    const [payAmount, setPayAmount] = React.useState<number>(Number(monto) || 0);
+    const [advanceModalVisible, setAdvanceModalVisible] = React.useState<boolean>(Number(monto) === 0);
+    const [advanceMonths, setAdvanceMonths] = React.useState<number>(Number(monto) === 0 ? 1 : 0);
 
     const condo = React.useMemo(() => {
         const associations: any[] = user?.viviendas || [];
@@ -80,6 +83,37 @@ export const PaymentsScreen = ({ navigation, route }: any) => {
         );
     }, [viviendaId, user?.viviendas, condo?.id]);
 
+    const monthlyCuota = (() => {
+        if (monthlyCuotaParam && Number(monthlyCuotaParam) > 0) return Number(monthlyCuotaParam);
+        const associations: any[] = user?.viviendas || [];
+        const assoc = associations.find((a: any) =>
+            (a?.vivienda?.id === resolvedViviendaId) ||
+            (a?.vivienda_id === resolvedViviendaId) ||
+            (a?.id === resolvedViviendaId)
+        );
+        const summary = assoc?.vivienda?.summary;
+        const items = [...(summary?.pagadas || []), ...(summary?.pendientes || [])];
+        items.sort((a: any, b: any) => (b.anio !== a.anio ? b.anio - a.anio : b.mes - a.mes));
+        return Number(items[0]?.monto) || 0;
+    })();
+
+    const baseBalance = Number(monto) || 0;
+    const minAdvanceMonths = baseBalance > 0 ? 0 : 1;
+    const maxAdvanceMonths = 12;
+    const advanceAmount = advanceMonths * monthlyCuota;
+    const computedPayAmount = baseBalance + advanceAmount;
+    const isAdvanceAllowed = monthlyCuota > 0 && !!resolvedViviendaId;
+
+    const openAdvanceModal = () => {
+        setAdvanceMonths(baseBalance > 0 ? 0 : 1);
+        setAdvanceModalVisible(true);
+    };
+
+    const confirmAdvance = () => {
+        setPayAmount(computedPayAmount);
+        setAdvanceModalVisible(false);
+    };
+
     const wompiEnabled = !!condo?.wompi_public_key;
     
     // Improved key extraction with support for various naming conventions and null-string safety
@@ -107,7 +141,7 @@ export const PaymentsScreen = ({ navigation, route }: any) => {
                     propietario_id: user?.id,
                     vivienda_id: resolvedViviendaId || undefined,
                     cuota_ids: cuotaIds,
-                    monto_total: monto
+                    monto_total: payAmount
                 })
             });
 
@@ -187,7 +221,7 @@ export const PaymentsScreen = ({ navigation, route }: any) => {
             const formData = new FormData();
             formData.append('condominioId', condo.id);
             formData.append('viviendaId', resolvedViviendaId || '');
-            formData.append('monto', monto.toString());
+            formData.append('monto', payAmount.toString());
             formData.append('cuotaIds', (cuotaIds || []).join(','));
             formData.append('receipt', fileToUpload);
 
@@ -238,7 +272,19 @@ export const PaymentsScreen = ({ navigation, route }: any) => {
 
                 <View style={styles.balanceContainer}>
                     <Text style={styles.balanceLabel}>Total a Pagar</Text>
-                    <Text style={styles.balanceValue}>${monto?.toLocaleString('es-CO')}</Text>
+                    <Text style={styles.balanceValue}>${payAmount?.toLocaleString('es-CO')}</Text>
+                    {isAdvanceAllowed && (
+                        <TouchableOpacity style={styles.otherValueButton} onPress={openAdvanceModal}>
+                            <Pencil size={12} color="rgba(255, 255, 255, 0.9)" />
+                            <Text style={styles.otherValueButtonText}>Otro valor</Text>
+                        </TouchableOpacity>
+                    )}
+                    {payAmount > baseBalance && (() => {
+                        const monthsApplied = monthlyCuota > 0 ? Math.round((payAmount - baseBalance) / monthlyCuota) : 0;
+                        return (
+                            <Text style={styles.advanceCaption}>Incluye {monthsApplied} {monthsApplied === 1 ? 'mes' : 'meses'} por adelantado</Text>
+                        );
+                    })()}
                     <Text style={styles.balanceDueDate}>Vivienda ID: {viviendaId}</Text>
                     <View style={styles.methodsContainer}>
                         {(wompiEnabled || !brebEnabled) && (
@@ -299,6 +345,87 @@ export const PaymentsScreen = ({ navigation, route }: any) => {
                 </View>
 
                 <Modal
+                    visible={advanceModalVisible && isAdvanceAllowed}
+                    transparent
+                    animationType="slide"
+                    onRequestClose={() => setAdvanceModalVisible(false)}
+                >
+                    <View style={styles.modalOverlay}>
+                        <View style={styles.modalContainer}>
+                            <View style={styles.modalHeader}>
+                                <Text style={styles.modalTitle}>Pagar por adelantado</Text>
+                                <TouchableOpacity
+                                    onPress={() => setAdvanceModalVisible(false)}
+                                    style={styles.modalCloseButton}
+                                >
+                                    <XCircle size={24} color={Colors.muted} />
+                                </TouchableOpacity>
+                            </View>
+
+                            <Text style={styles.modalMessage}>
+                                Elige cuántos meses quieres abonar por adelantado. El saldo a favor se aplicará automáticamente a tus próximas cuotas.
+                            </Text>
+
+                            <View style={styles.stepperContainer}>
+                                <TouchableOpacity
+                                    style={[styles.stepperButton, advanceMonths <= minAdvanceMonths && styles.stepperButtonDisabled]}
+                                    onPress={() => setAdvanceMonths(Math.max(minAdvanceMonths, advanceMonths - 1))}
+                                    disabled={advanceMonths <= minAdvanceMonths}
+                                >
+                                    <Minus size={20} color={advanceMonths <= minAdvanceMonths ? Colors.muted : Colors.primary} />
+                                </TouchableOpacity>
+                                <View style={styles.stepperValueBox}>
+                                    <Text style={styles.stepperValue}>{advanceMonths}</Text>
+                                    <Text style={styles.stepperLabel}>{advanceMonths === 1 ? 'Mes' : 'Meses'} por adelantado</Text>
+                                </View>
+                                <TouchableOpacity
+                                    style={[styles.stepperButton, advanceMonths >= maxAdvanceMonths && styles.stepperButtonDisabled]}
+                                    onPress={() => setAdvanceMonths(Math.min(maxAdvanceMonths, advanceMonths + 1))}
+                                    disabled={advanceMonths >= maxAdvanceMonths}
+                                >
+                                    <Plus size={20} color={advanceMonths >= maxAdvanceMonths ? Colors.muted : Colors.primary} />
+                                </TouchableOpacity>
+                            </View>
+
+                            <View style={styles.breakdownBox}>
+                                <View style={styles.breakdownRow}>
+                                    <Text style={styles.breakdownLabel}>Saldo pendiente</Text>
+                                    <Text style={styles.breakdownValue}>${baseBalance.toLocaleString('es-CO')}</Text>
+                                </View>
+                                {advanceMonths > 0 && (
+                                    <View style={styles.breakdownRow}>
+                                        <Text style={styles.breakdownLabel}>{advanceMonths} × ${monthlyCuota.toLocaleString('es-CO')}</Text>
+                                        <Text style={styles.breakdownValue}>${advanceAmount.toLocaleString('es-CO')}</Text>
+                                    </View>
+                                )}
+                                <View style={styles.breakdownDivider} />
+                                <View style={styles.breakdownRow}>
+                                    <Text style={styles.breakdownTotalLabel}>Total a pagar</Text>
+                                    <Text style={styles.breakdownTotalValue}>${computedPayAmount.toLocaleString('es-CO')}</Text>
+                                </View>
+                            </View>
+
+                            <Text style={styles.advanceNote}>
+                                Podrás ver tu saldo a favor en el Estado de Cuenta; cubrirá automáticamente tus cuotas futuras.
+                            </Text>
+
+                            <Button
+                                title="Aplicar"
+                                onPress={confirmAdvance}
+                                style={{ marginTop: 16 }}
+                            />
+
+                            <TouchableOpacity
+                                style={styles.modalCancelButton}
+                                onPress={() => setAdvanceModalVisible(false)}
+                            >
+                                <Text style={styles.modalCancelText}>Cancelar</Text>
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+                </Modal>
+
+                <Modal
                     visible={brebModalVisible}
                     transparent
                     animationType="slide"
@@ -322,7 +449,7 @@ export const PaymentsScreen = ({ navigation, route }: any) => {
 
                             <View style={styles.montoInfoBox}>
                                 <Text style={styles.montoInfoLabel}>Valor exacto a transferir</Text>
-                                <Text style={styles.montoInfoValue}>${monto?.toLocaleString('es-CO')}</Text>
+                                <Text style={styles.montoInfoValue}>${payAmount?.toLocaleString('es-CO')}</Text>
                             </View>
 
                             {!!brebKey && (
@@ -448,6 +575,26 @@ const styles = StyleSheet.create({
         opacity: 0.8,
         fontSize: 12,
         marginBottom: 24,
+    },
+    otherValueButton: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 4,
+        paddingVertical: 4,
+        paddingHorizontal: 8,
+        marginBottom: 8,
+    },
+    otherValueButtonText: {
+        color: 'rgba(255, 255, 255, 0.9)',
+        fontSize: 13,
+        fontWeight: '600',
+        textDecorationLine: 'underline',
+    },
+    advanceCaption: {
+        color: 'rgba(255, 255, 255, 0.85)',
+        fontSize: 12,
+        fontStyle: 'italic',
+        marginBottom: 8,
     },
     payButtonContainer: {
         width: '100%',
@@ -725,5 +872,81 @@ const styles = StyleSheet.create({
         color: Colors.muted,
         fontWeight: '600',
         fontSize: 15,
+    },
+    stepperContainer: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        marginBottom: 20,
+    },
+    stepperButton: {
+        width: 44,
+        height: 44,
+        borderRadius: 22,
+        borderWidth: 1,
+        borderColor: Colors.border,
+        backgroundColor: Colors.background,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    stepperButtonDisabled: {
+        opacity: 0.5,
+    },
+    stepperValueBox: {
+        alignItems: 'center',
+        paddingHorizontal: 24,
+        minWidth: 120,
+    },
+    stepperValue: {
+        fontSize: 32,
+        fontWeight: 'bold',
+        color: Colors.text,
+    },
+    stepperLabel: {
+        fontSize: 12,
+        color: Colors.muted,
+    },
+    breakdownBox: {
+        backgroundColor: Colors.secondary,
+        borderWidth: 1,
+        borderColor: Colors.border,
+        borderRadius: 12,
+        padding: 16,
+        marginBottom: 12,
+    },
+    breakdownRow: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: 8,
+    },
+    breakdownLabel: {
+        fontSize: 14,
+        color: Colors.muted,
+    },
+    breakdownValue: {
+        fontSize: 14,
+        fontWeight: '600',
+        color: Colors.text,
+    },
+    breakdownDivider: {
+        height: 1,
+        backgroundColor: Colors.border,
+        marginVertical: 8,
+    },
+    breakdownTotalLabel: {
+        fontSize: 15,
+        fontWeight: '700',
+        color: Colors.text,
+    },
+    breakdownTotalValue: {
+        fontSize: 18,
+        fontWeight: 'bold',
+        color: Colors.primary,
+    },
+    advanceNote: {
+        fontSize: 13,
+        color: Colors.muted,
+        lineHeight: 18,
     },
 });

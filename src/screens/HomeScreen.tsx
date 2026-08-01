@@ -155,6 +155,7 @@ export const HomeScreen = ({ navigation }: any) => {
     const [selectedViviendaForSmartHome, setSelectedViviendaForSmartHome] = useState<any>(null);
     const [pullProgress, setPullProgress] = useState(0);
     const [isUpToDateModalVisible, setIsUpToDateModalVisible] = useState(false);
+    const [upToDateVivienda, setUpToDateVivienda] = useState<any>(null);
     const [hasPortalServices, setHasPortalServices] = useState(false);
 
     const hasUnits = (authUser?.viviendas?.length ?? 0) > 0;
@@ -482,6 +483,12 @@ export const HomeScreen = ({ navigation }: any) => {
             .reduce((acc, c) => acc + (c.saldoPendiente || 0), 0);
     };
 
+    const getMonthlyCuota = (summary: any) => {
+        const items = [...(summary.pagadas || []), ...(summary.pendientes || [])];
+        items.sort((a: any, b: any) => (b.anio !== a.anio ? b.anio - a.anio : b.mes - a.mes));
+        return Number(items[0]?.monto) || 0;
+    };
+
     const groupHistoryByYear = (summary: any) => {
         const allItems = [...(summary.pendientes || []), ...(summary.pagadas || [])];
         const groups: Record<number, any[]> = {};
@@ -756,6 +763,7 @@ export const HomeScreen = ({ navigation }: any) => {
                                                             viviendasCount: 1
                                                         });
                                                     } else {
+                                                        setUpToDateVivienda(vivienda);
                                                         setIsUpToDateModalVisible(true);
                                                     }
                                                 });
@@ -867,6 +875,30 @@ export const HomeScreen = ({ navigation }: any) => {
                 title="¡Todo al día! ✨"
                 message="¡Excelente noticia! Tu vivienda se encuentra al día con sus pagos. Gracias por tu puntualidad y compromiso, tu apoyo es fundamental para el bienestar de la comunidad. ¡Que tengas un maravilloso día!"
                 onClose={() => setIsUpToDateModalVisible(false)}
+                buttons={[
+                    {
+                        text: 'Pagar por adelantado',
+                        style: 'link',
+                        onPress: () => {
+                            setIsUpToDateModalVisible(false);
+                            const summary = upToDateVivienda?.summary || {};
+                            const monthlyCuota = getMonthlyCuota(summary);
+                            if (monthlyCuota > 0) {
+                                navigation.navigate('Payments', {
+                                    viviendaId: upToDateVivienda.id,
+                                    condominioId: selectedCondoId,
+                                    monto: 0,
+                                    cuotaIds: [],
+                                    viviendasCount: 1,
+                                    monthlyCuota
+                                });
+                            } else {
+                                showAlert({ title: 'Aviso', message: 'Aún no tenemos el valor de tu cuota de administración. Cuando el administrador genere tu primera cuota podrás pagar meses por adelantado.', type: 'warning' });
+                            }
+                        }
+                    },
+                    { text: 'Entendido' }
+                ]}
             />
 
             {/* Statement Modal */}
