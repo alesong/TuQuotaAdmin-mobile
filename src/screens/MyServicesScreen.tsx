@@ -9,7 +9,9 @@ import {
     TextInput,
     Platform,
     Image,
+    Modal,
 } from 'react-native';
+import DateTimePicker, { DateTimePickerAndroid } from '@react-native-community/datetimepicker';
 import { useFocusEffect } from '@react-navigation/native';
 import {
     ArrowLeft,
@@ -24,6 +26,7 @@ import {
     Wifi,
     Settings,
     Trash2,
+    History,
 } from 'lucide-react-native';
 import { ActionButton } from '../components/ActionButton';
 import { Colors } from '../constants/Colors';
@@ -52,6 +55,75 @@ const getTodayISO = () => {
 const formatFecha = (fecha: string) => {
     const [yy, mm, dd] = (fecha || '').split('-');
     return dd && mm && yy ? `${dd}/${mm}/${yy}` : fecha;
+};
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+const toDayKey = (date: Date) =>
+    `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+
+const formatHora = (iso: string) => {
+    const d = new Date(iso);
+    return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+};
+
+const fechaStrToDate = (fecha: string) => {
+    const [y, m, d] = fecha.split('-').map(Number);
+    return new Date(y, m - 1, d);
+};
+
+const timeStrToDate = (hhmm: string) => {
+    const [h, m] = hhmm.split(':').map(Number);
+    const d = new Date();
+    d.setHours(h, m, 0, 0);
+    return d;
+};
+
+const getTodayMidnight = () => {
+    const d = new Date();
+    d.setHours(0, 0, 0, 0);
+    return d;
+};
+
+const formatHora12 = (hhmm: string) => {
+    const match = /^([01]\d|2[0-3]):([0-5]\d)$/.exec(hhmm || '');
+    if (!match) return hhmm;
+    const h = Number(match[1]);
+    const period = h >= 12 ? 'PM' : 'AM';
+    const h12 = h % 12 === 0 ? 12 : h % 12;
+    return `${h12}:${match[2]} ${period}`;
+};
+
+const dayLabel = (key: string, todayKey: string, yesterdayKey: string) => {
+    if (key === todayKey) return 'Hoy';
+    if (key === yesterdayKey) return 'Ayer';
+    const [yy, mm, dd] = key.split('-');
+    return `${dd}/${mm}/${yy}`;
+};
+
+const groupAccessByDay = (items: any[]) => {
+    const todayKey = toDayKey(new Date());
+    const yesterdayKey = toDayKey(new Date(Date.now() - DAY_MS));
+    const groups: { key: string; label: string; items: any[] }[] = [];
+    let currentKey: string | null = null;
+    let current: any[] = [];
+
+    for (const item of items) {
+        const key = toDayKey(new Date(item.executedAt));
+        if (key !== currentKey) {
+            if (currentKey) {
+                groups.push({ key: currentKey, label: dayLabel(currentKey, todayKey, yesterdayKey), items: current });
+            }
+            currentKey = key;
+            current = [];
+        }
+        current.push(item);
+    }
+    if (currentKey) {
+        groups.push({ key: currentKey, label: dayLabel(currentKey, todayKey, yesterdayKey), items: current });
+    }
+
+    return groups.slice(0, 3);
 };
 
 export const MyServicesScreen = ({ navigation, route }: any) => {
@@ -83,11 +155,16 @@ export const MyServicesScreen = ({ navigation, route }: any) => {
     const [vehicles, setVehicles] = useState<any[]>([]);
     const [newVehicle, setNewVehicle] = useState({ plate: '', brand: '', model: '', color: '' });
 
+    // Access history states
+    const [accessHistory, setAccessHistory] = useState<any[]>([]);
+    const [accessHistoryLoading, setAccessHistoryLoading] = useState(false);
+
     // Reservation states
     const [reservations, setReservations] = useState<Record<string, any[]>>({});
     const [reservationsLoading, setReservationsLoading] = useState<Record<string, boolean>>({});
     const [reservationSubmitting, setReservationSubmitting] = useState(false);
     const [reservationForm, setReservationForm] = useState({ fecha: '', horaInicio: '', horaFin: '', numPersonas: '1' });
+    const [pickerField, setPickerField] = useState<'fecha' | 'horaInicio' | 'horaFin' | null>(null);
 
     const API_URL = Config.API_URL;
 
@@ -157,11 +234,48 @@ export const MyServicesScreen = ({ navigation, route }: any) => {
     };
     fetchVehiclesRef.current = fetchVehicles;
 
+    const fetchAccessHistory = async () => {
+        try {
+            const response = await fetch(`${API_URL}/resident-services/access-history`, {
+                cache: 'no-cache',
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                },
+            });
+            if (response.ok) {
+                const data = await response.json();
+                setAccessHistory(data);
+            }
+        } catch (error) {
+            console.error('Error fetching access history:', error);
+        } finally {
+            setAccessHistoryLoading(false);
+        }
+    };
+    const fetchAccessHistoryRef = useRef<(() => Promise<void>) | null>(null);
+    fetchAccessHistoryRef.current = fetchAccessHistory;
+
     useFocusEffect(
         useCallback(() => {
             fetchMyServicesRef.current?.();
             fetchVehiclesRef.current?.();
         }, [])
+    );
+
+    // Polling de historial de accesos (solo pestaña gate con servicio de acceso y pantalla enfocada)
+    const gateServices = services.filter(s => s.category === 'ACCESS');
+    const hasGateService = gateServices.length > 0;
+
+    useFocusEffect(
+        useCallback(() => {
+            if (activeSection !== 'gate' || !hasGateService) return;
+            setAccessHistoryLoading(true);
+            fetchAccessHistoryRef.current?.();
+            const interval = setInterval(() => {
+                fetchAccessHistoryRef.current?.();
+            }, 10000);
+            return () => clearInterval(interval);
+        }, [activeSection, hasGateService])
     );
 
     // Preseleccionar servicio QR según pestaña activa
@@ -234,6 +348,7 @@ export const MyServicesScreen = ({ navigation, route }: any) => {
             const data = await response.json();
             if (response.ok && data.success) {
                 // Apertura enviada; sin alerta de confirmación
+                fetchAccessHistoryRef.current?.();
             } else {
                 showAlert('Error', data.message || 'No se pudo abrir el portón.', 'error');
             }
@@ -403,6 +518,34 @@ export const MyServicesScreen = ({ navigation, route }: any) => {
         }
     };
 
+    const applyPickerValue = (field: 'fecha' | 'horaInicio' | 'horaFin', date: Date) => {
+        setReservationForm(prev => ({
+            ...prev,
+            [field]: field === 'fecha' ? toDayKey(date) : formatHora(date.toISOString()),
+        }));
+    };
+
+    const openPicker = (field: 'fecha' | 'horaInicio' | 'horaFin') => {
+        if (Platform.OS === 'android') {
+            const isDate = field === 'fecha';
+            const current = reservationForm[field];
+            const base = isDate
+                ? (current ? fechaStrToDate(current) : new Date())
+                : (current ? timeStrToDate(current) : new Date());
+            DateTimePickerAndroid.open({
+                value: base,
+                mode: isDate ? 'date' : 'time',
+                is24Hour: false,
+                minimumDate: isDate ? getTodayMidnight() : undefined,
+                onValueChange: (event, selectedDate) => {
+                    applyPickerValue(field, selectedDate);
+                },
+            });
+        } else {
+            setPickerField(field);
+        }
+    };
+
     const handleCancelReservation = async (serviceId: string, reservaId: string) => {
         setReservationSubmitting(true);
         try {
@@ -503,7 +646,7 @@ export const MyServicesScreen = ({ navigation, route }: any) => {
                         style={[styles.tabButton, activeTabStyle(activeSection === tab)]}
                     >
                         <Text style={[styles.tabButtonText, activeTabTextStyle(activeSection === tab)]}>
-                            {tab === 'gate' && 'Portón'}
+                            {tab === 'gate' && 'Acceso'}
                             {tab === 'cameras' && 'Cámaras'}
                             {tab === 'pool' && 'Piscina'}
                             {tab === 'gym' && 'Gimnasio'}
@@ -548,30 +691,66 @@ export const MyServicesScreen = ({ navigation, route }: any) => {
                             PORTON SECTION
                            ========================================== */}
                         {activeSection === 'gate' && (
-                            services.filter(s => s.category === 'ACCESS').map(s => (
-                                <View key={s.serviceId} style={styles.serviceCard}>
-                                    <View style={styles.cardHeader}>
-                                        <Key size={22} color={Colors.primary} />
-                                        <View style={styles.cardHeaderTitleContainer}>
-                                            <Text style={styles.cardTitle}>{s.serviceName}</Text>
-                                            <Text style={styles.cardSubtitle}>{s.condominioName} — Módulo vehicular / Entrada principal</Text>
+                            <>
+                                {gateServices.map(s => (
+                                    <View key={s.serviceId} style={styles.serviceCard}>
+                                        <View style={styles.cardHeader}>
+                                            <Key size={22} color={Colors.primary} />
+                                            <View style={styles.cardHeaderTitleContainer}>
+                                                <Text style={styles.cardTitle}>{s.serviceName}</Text>
+                                                <Text style={styles.cardSubtitle}>{s.condominioName} — Módulo vehicular / Entrada principal</Text>
+                                            </View>
+                                            <Text style={[styles.statusBadge, { color: getStatusColor(s.status) }]}>
+                                                {getStatusText(s.status)}
+                                            </Text>
                                         </View>
-                                        <Text style={[styles.statusBadge, { color: getStatusColor(s.status) }]}>
-                                            {getStatusText(s.status)}
-                                        </Text>
+                                        <View style={styles.cardBody}>
+                                            <Text style={styles.cardText}>{s.description}</Text>
+
+                                            <ActionButton
+                                                config={s.button_config}
+                                                onPress={() => handleOpenGate(s.serviceId, s.serviceName)}
+                                                disabled={s.status !== 'ACTIVE'}
+                                                loading={gateLoading === s.serviceId}
+                                            />
+                                        </View>
                                     </View>
-                                    <View style={styles.cardBody}>
-                                        <Text style={styles.cardText}>{s.description}</Text>
-                                        
-                                        <ActionButton
-                                            config={s.button_config}
-                                            onPress={() => handleOpenGate(s.serviceId, s.serviceName)}
-                                            disabled={s.status !== 'ACTIVE'}
-                                            loading={gateLoading === s.serviceId}
-                                        />
+                                ))}
+
+                                {/* Historial de accesos */}
+                                <View style={styles.accessHistoryCard}>
+                                    <View style={styles.accessHistoryHeader}>
+                                        <History size={18} color={Colors.primary} />
+                                        <Text style={styles.accessHistoryTitle}>Historial de Accesos</Text>
                                     </View>
+                                    {accessHistoryLoading && accessHistory.length === 0 ? (
+                                        <ActivityIndicator size="small" color={Colors.primary} style={{ marginVertical: 12 }} />
+                                    ) : accessHistory.length === 0 ? (
+                                        <Text style={styles.accessHistoryEmpty}>Sin accesos registrados en los últimos 3 días.</Text>
+                                    ) : (
+                                        groupAccessByDay(accessHistory).map(day => (
+                                            <View key={day.key} style={styles.accessHistoryDay}>
+                                                <Text style={styles.accessHistoryDayTitle}>{day.label}</Text>
+                                                {day.items.map(item => {
+                                                    const isLatest = item.id === accessHistory[0].id;
+                                                    return (
+                                                        <View key={item.id} style={[styles.accessHistoryRow, isLatest && styles.accessHistoryRowLatest]}>
+                                                            <View style={styles.accessHistoryRowHeader}>
+                                                                <Text style={styles.accessHistoryVivienda}>
+                                                                    Vivienda {item.viviendaIdentificador || '—'}
+                                                                </Text>
+                                                                <Text style={styles.accessHistoryTime}>{formatHora(item.executedAt)}</Text>
+                                                            </View>
+                                                            <Text style={styles.accessHistoryUserName}>{item.userName}</Text>
+                                                            <Text style={styles.accessHistoryService}>{item.serviceName}</Text>
+                                                        </View>
+                                                    );
+                                                })}
+                                            </View>
+                                        ))
+                                    )}
                                 </View>
-                            ))
+                            </>
                         )}
 
                         {/* ==========================================
@@ -696,31 +875,40 @@ export const MyServicesScreen = ({ navigation, route }: any) => {
 
                                                 <Text style={[styles.cardTextHeader, { marginTop: 16 }]}>Realizar Reserva</Text>
                                                 <View style={styles.parkingForm}>
-                                                    <TextInput
-                                                        style={styles.input}
-                                                        placeholder="Fecha (AAAA-MM-DD)"
-                                                        value={reservationForm.fecha}
-                                                        onChangeText={(t) => setReservationForm(prev => ({ ...prev, fecha: t }))}
-                                                        placeholderTextColor={Colors.muted}
-                                                        autoCapitalize="none"
-                                                        autoCorrect={false}
-                                                    />
+                                                    <Text style={styles.label}>Fecha</Text>
+                                                    <TouchableOpacity
+                                                        style={[styles.input, styles.pickerInput]}
+                                                        onPress={() => openPicker('fecha')}
+                                                    >
+                                                        <Text style={[styles.pickerText, !reservationForm.fecha && { color: Colors.muted }]}>
+                                                            {reservationForm.fecha ? formatFecha(reservationForm.fecha) : 'Selecciona fecha'}
+                                                        </Text>
+                                                    </TouchableOpacity>
                                                     <View style={{ flexDirection: 'row', gap: 8 }}>
-                                                        <TextInput
-                                                            style={[styles.input, { flex: 1 }]}
-                                                            placeholder="Inicio (HH:mm)"
-                                                            value={reservationForm.horaInicio}
-                                                            onChangeText={(t) => setReservationForm(prev => ({ ...prev, horaInicio: t }))}
-                                                            placeholderTextColor={Colors.muted}
-                                                        />
-                                                        <TextInput
-                                                            style={[styles.input, { flex: 1 }]}
-                                                            placeholder="Fin (HH:mm)"
-                                                            value={reservationForm.horaFin}
-                                                            onChangeText={(t) => setReservationForm(prev => ({ ...prev, horaFin: t }))}
-                                                            placeholderTextColor={Colors.muted}
-                                                        />
+                                                        <View style={{ flex: 1 }}>
+                                                            <Text style={styles.label}>Hora Inicio</Text>
+                                                            <TouchableOpacity
+                                                                style={[styles.input, styles.pickerInput]}
+                                                                onPress={() => openPicker('horaInicio')}
+                                                            >
+                                                                <Text style={[styles.pickerText, !reservationForm.horaInicio && { color: Colors.muted }]}>
+                                                                    {reservationForm.horaInicio ? formatHora12(reservationForm.horaInicio) : 'Selecciona hora'}
+                                                                </Text>
+                                                            </TouchableOpacity>
+                                                        </View>
+                                                        <View style={{ flex: 1 }}>
+                                                            <Text style={styles.label}>Hora Fin</Text>
+                                                            <TouchableOpacity
+                                                                style={[styles.input, styles.pickerInput]}
+                                                                onPress={() => openPicker('horaFin')}
+                                                            >
+                                                                <Text style={[styles.pickerText, !reservationForm.horaFin && { color: Colors.muted }]}>
+                                                                    {reservationForm.horaFin ? formatHora12(reservationForm.horaFin) : 'Selecciona hora'}
+                                                                </Text>
+                                                            </TouchableOpacity>
+                                                        </View>
                                                     </View>
+                                                    <Text style={styles.label}>Número de Personas</Text>
                                                     <TextInput
                                                         style={styles.input}
                                                         placeholder="Número de personas"
@@ -916,6 +1104,46 @@ export const MyServicesScreen = ({ navigation, route }: any) => {
                 preferences={preferences}
                 onUpdate={updatePreferences}
             />
+
+            {pickerField && (
+                <Modal
+                    transparent
+                    visible
+                    animationType="slide"
+                    onRequestClose={() => setPickerField(null)}
+                >
+                    <View style={styles.pickerModalOverlay}>
+                        <View style={styles.pickerModalContent}>
+                            <View style={styles.pickerModalHeader}>
+                                <TouchableOpacity onPress={() => setPickerField(null)}>
+                                    <Text style={styles.pickerModalCancel}>Cancelar</Text>
+                                </TouchableOpacity>
+                                <Text style={styles.pickerModalTitle}>
+                                    {pickerField === 'fecha' ? 'Selecciona fecha' : 'Selecciona hora'}
+                                </Text>
+                                <TouchableOpacity onPress={() => setPickerField(null)}>
+                                    <Text style={styles.pickerModalDone}>Hecho</Text>
+                                </TouchableOpacity>
+                            </View>
+                            <DateTimePicker
+                                value={
+                                    pickerField === 'fecha'
+                                        ? (reservationForm.fecha ? fechaStrToDate(reservationForm.fecha) : new Date())
+                                        : (reservationForm[pickerField] ? timeStrToDate(reservationForm[pickerField]) : new Date())
+                                }
+                                mode={pickerField === 'fecha' ? 'date' : 'time'}
+                                display="spinner"
+                                minimumDate={pickerField === 'fecha' ? getTodayMidnight() : undefined}
+                                onChange={(event, selectedDate) => {
+                                    if (event.type !== 'dismissed' && selectedDate) {
+                                        applyPickerValue(pickerField, selectedDate);
+                                    }
+                                }}
+                            />
+                        </View>
+                    </View>
+                </Modal>
+            )}
         </View>
     );
 };
@@ -1195,6 +1423,53 @@ const styles = StyleSheet.create({
         color: Colors.text,
         backgroundColor: '#fff',
     },
+    label: {
+        fontSize: 14,
+        fontWeight: '500',
+        color: Colors.muted,
+        marginBottom: 8,
+    },
+    pickerInput: {
+        justifyContent: 'center',
+    },
+    pickerText: {
+        fontSize: 14,
+        color: Colors.text,
+    },
+    pickerModalOverlay: {
+        flex: 1,
+        backgroundColor: 'rgba(0, 0, 0, 0.5)',
+        justifyContent: 'flex-end',
+    },
+    pickerModalContent: {
+        backgroundColor: Colors.background,
+        borderTopLeftRadius: 16,
+        borderTopRightRadius: 16,
+        paddingBottom: 30,
+    },
+    pickerModalHeader: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        paddingHorizontal: 16,
+        paddingVertical: 12,
+        borderBottomWidth: 1,
+        borderBottomColor: Colors.border,
+    },
+    pickerModalCancel: {
+        fontSize: 14,
+        color: Colors.muted,
+    },
+    pickerModalDone: {
+        fontSize: 14,
+        fontWeight: '600',
+        color: Colors.primary,
+    },
+    pickerModalTitle: {
+        fontSize: 15,
+        fontWeight: '600',
+        color: Colors.text,
+    },
     vehicleRow: {
         flexDirection: 'row',
         alignItems: 'center',
@@ -1243,6 +1518,79 @@ const styles = StyleSheet.create({
         fontSize: 12,
         color: Colors.muted,
         marginTop: 2,
+    },
+    accessHistoryCard: {
+        backgroundColor: Colors.background,
+        borderRadius: 16,
+        marginBottom: 16,
+        padding: 16,
+        borderWidth: 1,
+        borderColor: Colors.border,
+    },
+    accessHistoryHeader: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        marginBottom: 12,
+    },
+    accessHistoryTitle: {
+        fontSize: 15,
+        fontWeight: 'bold',
+        color: Colors.text,
+        marginLeft: 8,
+    },
+    accessHistoryEmpty: {
+        fontSize: 12,
+        color: Colors.muted,
+        textAlign: 'center',
+        paddingVertical: 12,
+    },
+    accessHistoryDay: {
+        marginBottom: 10,
+    },
+    accessHistoryDayTitle: {
+        fontSize: 12,
+        fontWeight: 'bold',
+        color: Colors.muted,
+        textTransform: 'uppercase',
+        letterSpacing: 0.5,
+        marginBottom: 6,
+    },
+    accessHistoryRow: {
+        backgroundColor: Colors.secondary,
+        borderRadius: 10,
+        padding: 12,
+        marginBottom: 6,
+        borderWidth: 1,
+        borderColor: Colors.border,
+    },
+    accessHistoryRowLatest: {
+        backgroundColor: '#eff6ff',
+        borderColor: '#bfdbfe',
+    },
+    accessHistoryRowHeader: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+    },
+    accessHistoryVivienda: {
+        fontSize: 13,
+        fontWeight: 'bold',
+        color: Colors.primary,
+    },
+    accessHistoryTime: {
+        fontSize: 12,
+        color: Colors.muted,
+        fontWeight: '600',
+    },
+    accessHistoryUserName: {
+        fontSize: 13,
+        color: Colors.text,
+        marginTop: 2,
+    },
+    accessHistoryService: {
+        fontSize: 12,
+        color: Colors.muted,
+        marginTop: 1,
     },
     codeRow: {
         flexDirection: 'row',
