@@ -130,7 +130,7 @@ export const MyServicesScreen = ({ navigation, route }: any) => {
     const { token } = useAuth();
     const [loading, setLoading] = useState(false);
     const [services, setServices] = useState<any[]>([]);
-    const [activeSection, setActiveSection] = useState<'gate' | 'cameras' | 'pool' | 'gym' | 'bbq' | 'salon' | 'parking' | 'others'>('gate');
+    const [activeSection, setActiveSection] = useState<'gate' | 'cameras' | 'pool' | 'gym' | 'bbq' | 'salon' | 'parking' | 'visitantes' | 'others'>('gate');
 
     useEffect(() => {
         if (route?.params?.initialSection) {
@@ -152,8 +152,18 @@ export const MyServicesScreen = ({ navigation, route }: any) => {
     const [qrImageUrl, setQrImageUrl] = useState<string | null>(null);
 
     // Parking states
+    const [myViviendas, setMyViviendas] = useState<any[]>([]);
+    const [selectedViviendaId, setSelectedViviendaId] = useState<string>('');
     const [vehicles, setVehicles] = useState<any[]>([]);
+    const [maxVehicles, setMaxVehicles] = useState<number>(2);
     const [newVehicle, setNewVehicle] = useState({ plate: '', brand: '', model: '', color: '' });
+
+    // Visitor parking states
+    const [permisos, setPermisos] = useState<any[]>([]);
+    const [newPermiso, setNewPermiso] = useState({ plate: '', name: '' });
+    const [permisosLoading, setPermisosLoading] = useState(false);
+    const [visitorsSubmitting, setVisitorsSubmitting] = useState(false);
+    const [nowTick, setNowTick] = useState<number>(Date.now());
 
     // Access history states
     const [accessHistory, setAccessHistory] = useState<any[]>([]);
@@ -216,9 +226,27 @@ export const MyServicesScreen = ({ navigation, route }: any) => {
     const { connected: doorbellConnected, showAlert: showDoorbellAlert, doorbellServiceId, preferences, updatePreferences } = useDoorbell();
     const [showDoorbellSettings, setShowDoorbellSettings] = useState(false);
 
+    const fetchMisViviendas = async () => {
+        try {
+            const response = await fetch(`${API_URL}/resident-services/mis-viviendas`, {
+                cache: 'no-cache',
+                headers: { 'Authorization': `Bearer ${token}` },
+            });
+            if (response.ok) {
+                const data = await response.json();
+                setMyViviendas(data || []);
+            }
+        } catch (error) {
+            console.error('Error fetching viviendas:', error);
+        }
+    };
+    const fetchMisViviendasRef = useRef<(() => Promise<void>) | null>(null);
+    fetchMisViviendasRef.current = fetchMisViviendas;
+
     const fetchVehicles = async () => {
         try {
-            const response = await fetch(`${API_URL}/resident-services/parqueadero/vehiculos`, {
+            const qs = selectedViviendaId ? `?viviendaId=${encodeURIComponent(selectedViviendaId)}` : '';
+            const response = await fetch(`${API_URL}/resident-services/parqueadero/vehiculos${qs}`, {
                 cache: 'no-cache',
                 headers: {
                     'Authorization': `Bearer ${token}`,
@@ -226,13 +254,41 @@ export const MyServicesScreen = ({ navigation, route }: any) => {
             });
             if (response.ok) {
                 const data = await response.json();
-                setVehicles(data);
+                setVehicles(data.vehicles || []);
+                setMaxVehicles(data.max || 2);
+            } else {
+                setVehicles([]);
+                setMaxVehicles(2);
             }
         } catch (error) {
             console.error('Error fetching vehicles:', error);
+            setVehicles([]);
+            setMaxVehicles(2);
         }
     };
     fetchVehiclesRef.current = fetchVehicles;
+
+    const fetchPermisos = async () => {
+        setPermisosLoading(true);
+        try {
+            const qs = selectedViviendaId ? `?viviendaId=${encodeURIComponent(selectedViviendaId)}` : '';
+            const response = await fetch(`${API_URL}/resident-services/visitantes/permisos${qs}`, {
+                cache: 'no-cache',
+                headers: { 'Authorization': `Bearer ${token}` },
+            });
+            if (response.ok) {
+                const data = await response.json();
+                setPermisos(data || []);
+            } else {
+                setPermisos([]);
+            }
+        } catch (error) {
+            console.error('Error fetching permisos:', error);
+            setPermisos([]);
+        } finally {
+            setPermisosLoading(false);
+        }
+    };
 
     const fetchAccessHistory = async () => {
         try {
@@ -258,13 +314,61 @@ export const MyServicesScreen = ({ navigation, route }: any) => {
     useFocusEffect(
         useCallback(() => {
             fetchMyServicesRef.current?.();
-            fetchVehiclesRef.current?.();
+            fetchMisViviendasRef.current?.();
         }, [])
     );
 
-    // Polling de historial de accesos (solo pestaña gate con servicio de acceso y pantalla enfocada)
+    const parkingServices = services.filter(s => s.category === 'PARKING');
+    const visitorServices = services.filter(s => s.category === 'VISITORS');
     const gateServices = services.filter(s => s.category === 'ACCESS');
     const hasGateService = gateServices.length > 0;
+
+    useEffect(() => {
+        if (parkingServices.length > 0) {
+            fetchVehiclesRef.current?.();
+        } else {
+            setVehicles([]);
+            setMaxVehicles(2);
+        }
+    }, [services, selectedViviendaId]);
+
+    useEffect(() => {
+        if (visitorServices.length > 0) {
+            fetchPermisos();
+        } else {
+            setPermisos([]);
+        }
+    }, [services, selectedViviendaId]);
+
+    useEffect(() => {
+        if (visitorServices.length === 0) return;
+        const interval = setInterval(() => setNowTick(Date.now()), 30000);
+        return () => clearInterval(interval);
+    }, [visitorServices.length]);
+
+    const knownCategories = ['ACCESS', 'CAMERAS', 'AMENITIES', 'PARKING', 'VISITORS'];
+    const hasOtherServices = services.some(s => !knownCategories.includes(s.category));
+    const tabs: { key: string; label: string }[] = [];
+    if (gateServices.length > 0) tabs.push({ key: 'gate', label: 'Acceso' });
+    if (services.some(s => s.category === 'CAMERAS')) tabs.push({ key: 'cameras', label: 'Cámaras' });
+    (['pool', 'gym', 'bbq', 'salon'] as const).forEach(t => {
+        if (services.some(s =>
+            s.category === 'AMENITIES' &&
+            s.serviceName.toUpperCase().includes(AMENITY_CONFIG[t].searchTerm)
+        )) {
+            tabs.push({ key: t, label: AMENITY_CONFIG[t].label });
+        }
+    });
+    if (parkingServices.length > 0) tabs.push({ key: 'parking', label: 'Parqueadero' });
+    if (visitorServices.length > 0) tabs.push({ key: 'visitantes', label: 'Visitantes' });
+    if (hasOtherServices) tabs.push({ key: 'others', label: 'Otros Servicios' });
+    const tabKeys = tabs.map(t => t.key).join(',');
+
+    useEffect(() => {
+        if (tabs.length > 0 && !tabs.some(t => t.key === activeSection)) {
+            setActiveSection(tabs[0].key as any);
+        }
+    }, [tabKeys]);
 
     useFocusEffect(
         useCallback(() => {
@@ -410,11 +514,15 @@ export const MyServicesScreen = ({ navigation, route }: any) => {
                     'Content-Type': 'application/json',
                     'Authorization': `Bearer ${token}`,
                 },
-                body: JSON.stringify(newVehicle),
+                body: JSON.stringify({
+                    ...newVehicle,
+                    ...(selectedViviendaId ? { viviendaId: selectedViviendaId } : {}),
+                }),
             });
             const data = await response.json();
             if (response.ok && data.success) {
                 setVehicles(data.vehicles);
+                setMaxVehicles(data.max || 2);
                 setNewVehicle({ plate: '', brand: '', model: '', color: '' });
             } else {
                 showAlert('Error', data.message || 'No se pudo agregar el vehículo.', 'error');
@@ -429,7 +537,8 @@ export const MyServicesScreen = ({ navigation, route }: any) => {
     const handleDeleteVehicle = async (plate: string) => {
         setActionLoading(true);
         try {
-            const response = await fetch(`${API_URL}/resident-services/parqueadero/vehiculos/${encodeURIComponent(plate)}`, {
+            const qs = selectedViviendaId ? `?viviendaId=${encodeURIComponent(selectedViviendaId)}` : '';
+            const response = await fetch(`${API_URL}/resident-services/parqueadero/vehiculos/${encodeURIComponent(plate)}${qs}`, {
                 method: 'DELETE',
                 headers: {
                     'Authorization': `Bearer ${token}`,
@@ -438,6 +547,7 @@ export const MyServicesScreen = ({ navigation, route }: any) => {
             const data = await response.json();
             if (response.ok && data.success) {
                 setVehicles(data.vehicles);
+                setMaxVehicles(data.max || 2);
             } else {
                 showAlert('Error', data.message || 'No se pudo eliminar el vehículo.', 'error');
             }
@@ -445,6 +555,79 @@ export const MyServicesScreen = ({ navigation, route }: any) => {
             showAlert('Error de Red', 'Revisa tu conexión.', 'error');
         } finally {
             setActionLoading(false);
+        }
+    };
+
+    const handleAddPermiso = async () => {
+        if (!newPermiso.plate.trim()) {
+            showAlert('Placa Requerida', 'Ingresa la placa del visitante.', 'warning');
+            return;
+        }
+        setVisitorsSubmitting(true);
+        try {
+            const response = await fetch(`${API_URL}/resident-services/visitantes/permisos`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`,
+                },
+                body: JSON.stringify({
+                    plate: newPermiso.plate,
+                    name: newPermiso.name,
+                    ...(selectedViviendaId ? { viviendaId: selectedViviendaId } : {}),
+                }),
+            });
+            const data = await response.json();
+            if (response.ok) {
+                setPermisos(prev => [data, ...prev.filter(p => p.id !== data.id)]);
+                setNewPermiso({ plate: '', name: '' });
+            } else {
+                showAlert('Error', data.message || 'No se pudo registrar el visitante.', 'error');
+            }
+        } catch (error) {
+            showAlert('Error de Red', 'Revisa tu conexión.', 'error');
+        } finally {
+            setVisitorsSubmitting(false);
+        }
+    };
+
+    const handleFinalizarPermiso = async (id: string) => {
+        setVisitorsSubmitting(true);
+        try {
+            const response = await fetch(`${API_URL}/resident-services/visitantes/permisos/${id}/finalizar`, {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${token}` },
+            });
+            const data = await response.json();
+            if (response.ok) {
+                setPermisos(prev => prev.map(p => (p.id === id ? data : p)));
+            } else {
+                showAlert('Error', data.message || 'No se pudo finalizar el permiso.', 'error');
+            }
+        } catch (error) {
+            showAlert('Error de Red', 'Revisa tu conexión.', 'error');
+        } finally {
+            setVisitorsSubmitting(false);
+        }
+    };
+
+    const handleCancelPermiso = async (id: string) => {
+        setVisitorsSubmitting(true);
+        try {
+            const response = await fetch(`${API_URL}/resident-services/visitantes/permisos/${id}`, {
+                method: 'DELETE',
+                headers: { 'Authorization': `Bearer ${token}` },
+            });
+            const data = await response.json();
+            if (response.ok) {
+                setPermisos(prev => prev.map(p => (p.id === id ? data : p)));
+            } else {
+                showAlert('Error', data.message || 'No se pudo cancelar el permiso.', 'error');
+            }
+        } catch (error) {
+            showAlert('Error de Red', 'Revisa tu conexión.', 'error');
+        } finally {
+            setVisitorsSubmitting(false);
         }
     };
 
@@ -639,25 +822,45 @@ export const MyServicesScreen = ({ navigation, route }: any) => {
 
             {/* Navigation tabs */}
             <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.tabsContainer} contentContainerStyle={styles.tabsContent}>
-                {(['gate', 'cameras', 'pool', 'gym', 'bbq', 'salon', 'parking', 'others'] as const).map(tab => (
+                {tabs.map(tab => (
                     <TouchableOpacity
-                        key={tab}
-                        onPress={() => setActiveSection(tab)}
-                        style={[styles.tabButton, activeTabStyle(activeSection === tab)]}
+                        key={tab.key}
+                        onPress={() => setActiveSection(tab.key as any)}
+                        style={[styles.tabButton, activeTabStyle(activeSection === tab.key)]}
                     >
-                        <Text style={[styles.tabButtonText, activeTabTextStyle(activeSection === tab)]}>
-                            {tab === 'gate' && 'Acceso'}
-                            {tab === 'cameras' && 'Cámaras'}
-                            {tab === 'pool' && 'Piscina'}
-                            {tab === 'gym' && 'Gimnasio'}
-                            {tab === 'bbq' && 'BBQ'}
-                            {tab === 'salon' && 'Salón'}
-                            {tab === 'parking' && 'Parqueadero'}
-                            {tab === 'others' && 'Otros Servicios'}
+                        <Text style={[styles.tabButtonText, activeTabTextStyle(activeSection === tab.key)]}>
+                            {tab.label}
                         </Text>
                     </TouchableOpacity>
                 ))}
             </ScrollView>
+
+            {myViviendas.length > 1 && (
+                <View style={styles.viviendaSelector}>
+                    <Text style={styles.viviendaSelectorLabel}>Vivienda:</Text>
+                    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+                        <TouchableOpacity
+                            style={[styles.viviendaChip, selectedViviendaId === '' && styles.viviendaChipActive]}
+                            onPress={() => setSelectedViviendaId('')}
+                        >
+                            <Text style={[styles.viviendaChipText, selectedViviendaId === '' && styles.viviendaChipTextActive]}>
+                                Principal
+                            </Text>
+                        </TouchableOpacity>
+                        {myViviendas.map(v => (
+                            <TouchableOpacity
+                                key={v.id}
+                                style={[styles.viviendaChip, selectedViviendaId === v.id && styles.viviendaChipActive]}
+                                onPress={() => setSelectedViviendaId(v.id)}
+                            >
+                                <Text style={[styles.viviendaChipText, selectedViviendaId === v.id && styles.viviendaChipTextActive]}>
+                                    {v.identificador}
+                                </Text>
+                            </TouchableOpacity>
+                        ))}
+                    </View>
+                </View>
+            )}
 
             {doorbellServiceId && (
                 <View style={styles.doorbellStatusBar}>
@@ -962,76 +1165,223 @@ export const MyServicesScreen = ({ navigation, route }: any) => {
                             PARKING RESIDENT VEHICLES
                            ========================================== */}
                         {activeSection === 'parking' && (
-                            <View style={styles.serviceCard}>
-                                <View style={styles.cardHeader}>
-                                    <Zap size={22} color={Colors.primary} />
-                                    <View style={styles.cardHeaderTitleContainer}>
-                                        <Text style={styles.cardTitle}>Parqueadero y Control Vehicular</Text>
-                                        <Text style={styles.cardSubtitle}>Mis vehículos registrados</Text>
+                            <>
+                                {parkingServices.length === 0 ? (
+                                    <View style={styles.emptyContainer}>
+                                        <Info size={48} color={Colors.muted} style={{ marginBottom: 12, opacity: 0.4 }} />
+                                        <Text style={styles.emptyText}>No hay un servicio de parqueadero configurado en tu condominio.</Text>
                                     </View>
-                                </View>
-                                <View style={styles.cardBody}>
-                                    {/* Resident vehicles list */}
-                                    <Text style={styles.cardTextHeader}>Vehículos Autorizados ({vehicles.length}/2):</Text>
-                                    {vehicles.length === 0 ? (
-                                        <Text style={{ fontSize: 12, color: Colors.muted }}>Aún no tienes vehículos registrados.</Text>
-                                    ) : (
-                                        vehicles.map((v, i) => (
-                                            <View key={i} style={styles.vehicleRow}>
-                                                <Text style={styles.vehiclePlate}>{v.plate}</Text>
-                                                <Text style={styles.vehicleDesc}>{v.brand} {v.model} ({v.color})</Text>
-                                                <TouchableOpacity
-                                                    onPress={() => handleDeleteVehicle(v.plate)}
-                                                    style={{ marginLeft: 'auto', padding: 6 }}
-                                                    disabled={actionLoading}
-                                                >
-                                                    <Trash2 size={16} color={Colors.error} />
-                                                </TouchableOpacity>
-                                            </View>
-                                        ))
-                                    )}
+                                ) : (
+                                    parkingServices.map(s => {
+                                        const max = Number(s.config?.maxVehiclesPerVivienda) || 2;
+                                        const suspended = s.status !== 'ACTIVE';
+                                        return (
+                                            <View key={s.serviceId} style={styles.serviceCard}>
+                                                <View style={styles.cardHeader}>
+                                                    <Zap size={22} color={Colors.primary} />
+                                                    <View style={styles.cardHeaderTitleContainer}>
+                                                        <Text style={styles.cardTitle}>{s.serviceName || 'Parqueadero y Control Vehicular'}</Text>
+                                                        <Text style={styles.cardSubtitle}>Mis vehículos registrados</Text>
+                                                    </View>
+                                                    <Text style={[styles.statusBadge, { color: getStatusColor(s.status) }]}>
+                                                        {getStatusText(s.status)}
+                                                    </Text>
+                                                </View>
+                                                <View style={styles.cardBody}>
+                                                    {suspended && (
+                                                        <View style={{ backgroundColor: '#fef2f2', borderRadius: 8, padding: 10, marginBottom: 12 }}>
+                                                            <Text style={{ fontSize: 12, color: '#b91c1c' }}>
+                                                                Este servicio se encuentra suspendido por mora. No puedes modificar tus vehículos hasta estar al día.
+                                                            </Text>
+                                                        </View>
+                                                    )}
+                                                    <Text style={styles.cardTextHeader}>Vehículos Autorizados ({vehicles.length}/{max}):</Text>
+                                                    {vehicles.length === 0 ? (
+                                                        <Text style={{ fontSize: 12, color: Colors.muted }}>Aún no tienes vehículos registrados.</Text>
+                                                    ) : (
+                                                        vehicles.map((v, i) => (
+                                                            <View key={v.id || i} style={styles.vehicleRow}>
+                                                                <Text style={styles.vehiclePlate}>{v.plate}</Text>
+                                                                <Text style={styles.vehicleDesc}>{v.brand} {v.model} ({v.color})</Text>
+                                                                <TouchableOpacity
+                                                                    onPress={() => handleDeleteVehicle(v.plate)}
+                                                                    style={{ marginLeft: 'auto', padding: 6 }}
+                                                                    disabled={actionLoading || suspended}
+                                                                >
+                                                                    <Trash2 size={16} color={Colors.error} />
+                                                                </TouchableOpacity>
+                                                            </View>
+                                                        ))
+                                                    )}
 
-                                    {/* Add my vehicle */}
-                                    <Text style={[styles.cardTextHeader, { marginTop: 16 }]}>Agregar Mi Vehículo:</Text>
-                                    <View style={styles.parkingForm}>
-                                        <TextInput
-                                            style={styles.input}
-                                            placeholder="Placa (Ej. ABC-123)"
-                                            value={newVehicle.plate}
-                                            onChangeText={(t) => setNewVehicle(prev => ({ ...prev, plate: t }))}
-                                            placeholderTextColor={Colors.muted}
-                                        />
-                                        <TextInput
-                                            style={styles.input}
-                                            placeholder="Marca (Ej. Mazda)"
-                                            value={newVehicle.brand}
-                                            onChangeText={(t) => setNewVehicle(prev => ({ ...prev, brand: t }))}
-                                            placeholderTextColor={Colors.muted}
-                                        />
-                                        <TextInput
-                                            style={styles.input}
-                                            placeholder="Modelo (Ej. CX-5)"
-                                            value={newVehicle.model}
-                                            onChangeText={(t) => setNewVehicle(prev => ({ ...prev, model: t }))}
-                                            placeholderTextColor={Colors.muted}
-                                        />
-                                        <TextInput
-                                            style={styles.input}
-                                            placeholder="Color (Ej. Gris)"
-                                            value={newVehicle.color}
-                                            onChangeText={(t) => setNewVehicle(prev => ({ ...prev, color: t }))}
-                                            placeholderTextColor={Colors.muted}
-                                        />
-                                        <ActionButton
-                                            config={{}}
-                                            label={vehicles.length >= 2 ? "Máximo 2 vehículos" : "Agregar Vehículo"}
-                                            onPress={handleAddVehicle}
-                                            disabled={actionLoading || vehicles.length >= 2}
-                                            loading={actionLoading}
-                                        />
+                                                    <Text style={[styles.cardTextHeader, { marginTop: 16 }]}>Agregar Mi Vehículo:</Text>
+                                                    <View style={styles.parkingForm}>
+                                                        <TextInput
+                                                            style={styles.input}
+                                                            placeholder="Placa (Ej. ABC-123)"
+                                                            value={newVehicle.plate}
+                                                            onChangeText={(t) => setNewVehicle(prev => ({ ...prev, plate: t }))}
+                                                            placeholderTextColor={Colors.muted}
+                                                        />
+                                                        <TextInput
+                                                            style={styles.input}
+                                                            placeholder="Marca (Ej. Mazda)"
+                                                            value={newVehicle.brand}
+                                                            onChangeText={(t) => setNewVehicle(prev => ({ ...prev, brand: t }))}
+                                                            placeholderTextColor={Colors.muted}
+                                                        />
+                                                        <TextInput
+                                                            style={styles.input}
+                                                            placeholder="Modelo (Ej. CX-5)"
+                                                            value={newVehicle.model}
+                                                            onChangeText={(t) => setNewVehicle(prev => ({ ...prev, model: t }))}
+                                                            placeholderTextColor={Colors.muted}
+                                                        />
+                                                        <TextInput
+                                                            style={styles.input}
+                                                            placeholder="Color (Ej. Gris)"
+                                                            value={newVehicle.color}
+                                                            onChangeText={(t) => setNewVehicle(prev => ({ ...prev, color: t }))}
+                                                            placeholderTextColor={Colors.muted}
+                                                        />
+                                                        <ActionButton
+                                                            config={{}}
+                                                            label={suspended ? 'Suspendido por mora' : vehicles.length >= max ? `Máximo ${max} vehículos` : 'Agregar Vehículo'}
+                                                            onPress={handleAddVehicle}
+                                                            disabled={actionLoading || vehicles.length >= max || suspended}
+                                                            loading={actionLoading}
+                                                        />
+                                                    </View>
+                                                </View>
+                                            </View>
+                                        );
+                                    })
+                                )}
+                            </>
+                        )}
+
+                        {/* ==========================================
+                            VISITOR PARKING
+                           ========================================== */}
+                        {activeSection === 'visitantes' && (
+                            <>
+                                {visitorServices.length === 0 ? (
+                                    <View style={styles.emptyContainer}>
+                                        <Info size={48} color={Colors.muted} style={{ marginBottom: 12, opacity: 0.4 }} />
+                                        <Text style={styles.emptyText}>No hay un servicio de parqueadero de visitantes configurado en tu condominio.</Text>
                                     </View>
-                                </View>
-                            </View>
+                                ) : (
+                                    visitorServices.map(s => {
+                                        const freeHours = Number(s.config?.freeHoursPerDay) || 2;
+                                        const fractionValue = Number(s.config?.fractionValue) || 5000;
+                                        const fractionUnit = s.config?.fractionUnit === 'HOUR' ? 'HORA' : 'MINUTO';
+                                        const suspended = s.status !== 'ACTIVE';
+                                        return (
+                                            <View key={s.serviceId} style={styles.serviceCard}>
+                                                <View style={styles.cardHeader}>
+                                                    <Zap size={22} color={Colors.primary} />
+                                                    <View style={styles.cardHeaderTitleContainer}>
+                                                        <Text style={styles.cardTitle}>{s.serviceName || 'Parqueadero de Visitantes'}</Text>
+                                                        <Text style={styles.cardSubtitle}>
+                                                            {freeHours}h gratis/día - fracción adicional de {fractionUnit === 'HORA' ? '1 hora' : '1 minuto'} a ${Number(fractionValue).toLocaleString('es-CO')}
+                                                        </Text>
+                                                    </View>
+                                                    <Text style={[styles.statusBadge, { color: getStatusColor(s.status) }]}>
+                                                        {getStatusText(s.status)}
+                                                    </Text>
+                                                </View>
+                                                <View style={styles.cardBody}>
+                                                    {suspended && (
+                                                        <View style={{ backgroundColor: '#fef2f2', borderRadius: 8, padding: 10, marginBottom: 12 }}>
+                                                            <Text style={{ fontSize: 12, color: '#b91c1c' }}>
+                                                                Este servicio se encuentra suspendido por mora. No puedes registrar visitantes hasta estar al día.
+                                                            </Text>
+                                                        </View>
+                                                    )}
+
+                                                    <Text style={styles.cardTextHeader}>Registrar Visitante:</Text>
+                                                    <View style={styles.parkingForm}>
+                                                        <TextInput
+                                                            style={styles.input}
+                                                            placeholder="Placa (Ej. ABC-123)"
+                                                            value={newPermiso.plate}
+                                                            onChangeText={(t) => setNewPermiso(prev => ({ ...prev, plate: t }))}
+                                                            placeholderTextColor={Colors.muted}
+                                                        />
+                                                        <TextInput
+                                                            style={styles.input}
+                                                            placeholder="Nombre (opcional)"
+                                                            value={newPermiso.name}
+                                                            onChangeText={(t) => setNewPermiso(prev => ({ ...prev, name: t }))}
+                                                            placeholderTextColor={Colors.muted}
+                                                        />
+                                                        <ActionButton
+                                                            config={{}}
+                                                            label={suspended ? 'Suspendido por mora' : 'Registrar Visitante'}
+                                                            onPress={handleAddPermiso}
+                                                            disabled={visitorsSubmitting || suspended}
+                                                            loading={visitorsSubmitting}
+                                                        />
+                                                    </View>
+
+                                                    <Text style={[styles.cardTextHeader, { marginTop: 16 }]}>Permisos:</Text>
+                                                    {permisosLoading && permisos.length === 0 ? (
+                                                        <ActivityIndicator size="small" color={Colors.primary} style={{ marginVertical: 12 }} />
+                                                    ) : permisos.length === 0 ? (
+                                                        <Text style={{ fontSize: 12, color: Colors.muted }}>No hay permisos registrados.</Text>
+                                                    ) : (
+                                                        permisos.map(p => {
+                                                            const entryMs = new Date(p.entryAt).getTime();
+                                                            const elapsedMin = Math.max(0, Math.floor((nowTick - entryMs) / 60000));
+                                                            const freeMin = Number(p.freeHours) * 60;
+                                                            const excessMin = Math.max(0, elapsedMin - freeMin);
+                                                            const fractionMin = p.fractionUnit === 'HOUR' ? 60 : 1;
+                                                            const isActive = p.estado === 'ACTIVO';
+                                                            const previewCost = isActive
+                                                                ? Math.ceil(excessMin / fractionMin) * Number(p.fractionValue)
+                                                                : Number(p.computedCost);
+                                                            return (
+                                                                <View key={p.id} style={styles.vehicleRow}>
+                                                                    <View style={{ flex: 1, paddingRight: 8 }}>
+                                                                        <Text style={styles.vehiclePlate}>{p.plate}{p.name ? ` (${p.name})` : ''}</Text>
+                                                                        <Text style={{ fontSize: 11, color: Colors.muted }}>
+                                                                            {isActive
+                                                                                ? (excessMin > 0
+                                                                                    ? `${Math.floor(elapsedMin / 60)}h ${elapsedMin % 60}min - ${Math.round(excessMin)}min extra - Costo aprox. $${previewCost.toLocaleString('es-CO')}`
+                                                                                    : `${Math.floor(elapsedMin / 60)}h ${elapsedMin % 60}min - Dentro de horas gratis`)
+                                                                                : p.estado === 'FINALIZADO'
+                                                                                    ? (p.computedCost > 0 ? `Finalizado - Costo $${p.computedCost.toLocaleString('es-CO')} (registrado como deuda)` : 'Finalizado - Sin costo')
+                                                                                    : 'Cancelado'}
+                                                                        </Text>
+                                                                    </View>
+                                                                    {isActive && (
+                                                                        <View style={{ flexDirection: 'row', gap: 8 }}>
+                                                                            <TouchableOpacity
+                                                                                onPress={() => handleFinalizarPermiso(p.id)}
+                                                                                disabled={visitorsSubmitting}
+                                                                                style={{ padding: 6, backgroundColor: '#dcfce7', borderRadius: 6 }}
+                                                                            >
+                                                                                <Text style={{ fontSize: 11, color: '#15803d', fontWeight: '600' }}>Finalizar</Text>
+                                                                            </TouchableOpacity>
+                                                                            <TouchableOpacity
+                                                                                onPress={() => handleCancelPermiso(p.id)}
+                                                                                disabled={visitorsSubmitting}
+                                                                                style={{ padding: 6, backgroundColor: '#fee2e2', borderRadius: 6 }}
+                                                                            >
+                                                                                <Text style={{ fontSize: 11, color: '#b91c1c', fontWeight: '600' }}>Cancelar</Text>
+                                                                            </TouchableOpacity>
+                                                                        </View>
+                                                                    )}
+                                                                </View>
+                                                            );
+                                                        })
+                                                    )}
+                                                </View>
+                                            </View>
+                                        );
+                                    })
+                                )}
+                            </>
                         )}
 
                         {/* ==========================================
@@ -1039,7 +1389,7 @@ export const MyServicesScreen = ({ navigation, route }: any) => {
                            ========================================== */}
                         {activeSection === 'others' && (
                             (() => {
-                                const conocidas = ['ACCESS', 'CAMERAS', 'AMENITIES'];
+                                const conocidas = ['ACCESS', 'CAMERAS', 'AMENITIES', 'PARKING', 'VISITORS'];
                                 const otros = services.filter(s => !conocidas.includes(s.category));
                                 if (otros.length === 0) {
                                     return (
@@ -1491,6 +1841,42 @@ const styles = StyleSheet.create({
     parkingForm: {
         gap: 10,
         marginBottom: 12,
+    },
+    viviendaSelector: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        flexWrap: 'wrap',
+        gap: 8,
+        paddingHorizontal: 16,
+        paddingVertical: 10,
+        backgroundColor: Colors.secondary,
+        borderBottomWidth: 1,
+        borderBottomColor: Colors.border,
+    },
+    viviendaSelectorLabel: {
+        fontSize: 13,
+        fontWeight: '600',
+        color: Colors.muted,
+    },
+    viviendaChip: {
+        paddingHorizontal: 12,
+        paddingVertical: 6,
+        borderRadius: 16,
+        backgroundColor: Colors.background,
+        borderWidth: 1,
+        borderColor: Colors.border,
+    },
+    viviendaChipActive: {
+        backgroundColor: Colors.primary,
+        borderColor: Colors.primary,
+    },
+    viviendaChipText: {
+        fontSize: 13,
+        color: Colors.text,
+    },
+    viviendaChipTextActive: {
+        color: '#ffffff',
+        fontWeight: '600',
     },
     reservaSection: {
         width: '100%',
