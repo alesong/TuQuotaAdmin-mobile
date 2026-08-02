@@ -1275,6 +1275,9 @@ export const MyServicesScreen = ({ navigation, route }: any) => {
                                         const freeHours = Number(s.config?.freeHoursPerDay) || 2;
                                         const fractionValue = Number(s.config?.fractionValue) || 5000;
                                         const fractionUnit = s.config?.fractionUnit === 'HOUR' ? 'HORA' : 'MINUTO';
+                                        const maxVisitors = Number(s.config?.maxVisitorsPerVivienda) || 0;
+                                        const activeCount = permisos.filter(p => p.estado === 'ACTIVO').length;
+                                        const visitorsFull = maxVisitors > 0 && activeCount >= maxVisitors;
                                         const suspended = s.status !== 'ACTIVE';
                                         return (
                                             <View key={s.serviceId} style={styles.serviceCard}>
@@ -1317,14 +1320,20 @@ export const MyServicesScreen = ({ navigation, route }: any) => {
                                                         />
                                                         <ActionButton
                                                             config={{}}
-                                                            label={suspended ? 'Suspendido por mora' : 'Registrar Visitante'}
+                                                            label={suspended
+                                                                ? 'Suspendido por mora'
+                                                                : visitorsFull
+                                                                    ? `Máximo ${maxVisitors} visitantes`
+                                                                    : 'Registrar Visitante'}
                                                             onPress={handleAddPermiso}
-                                                            disabled={visitorsSubmitting || suspended}
+                                                            disabled={visitorsSubmitting || suspended || visitorsFull}
                                                             loading={visitorsSubmitting}
                                                         />
                                                     </View>
 
-                                                    <Text style={[styles.cardTextHeader, { marginTop: 16 }]}>Permisos:</Text>
+                                                    <Text style={[styles.cardTextHeader, { marginTop: 16 }]}>
+                                                        Permisos{maxVisitors > 0 ? ` (${activeCount}/${maxVisitors} activos)` : ''}:
+                                                    </Text>
                                                     {permisosLoading && permisos.length === 0 ? (
                                                         <ActivityIndicator size="small" color={Colors.primary} style={{ marginVertical: 12 }} />
                                                     ) : permisos.length === 0 ? (
