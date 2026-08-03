@@ -790,6 +790,36 @@ export const MyServicesScreen = ({ navigation, route }: any) => {
 
     const hasMora = services.some(s => s.financialStatus === 'EN_MORA');
 
+    const renderViviendaSelector = () => {
+        if (myViviendas.length <= 1) return null;
+        return (
+            <View style={styles.viviendaSelectorInCard}>
+                <Text style={styles.viviendaSelectorLabel}>Vivienda:</Text>
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+                    <TouchableOpacity
+                        style={[styles.viviendaChip, selectedViviendaId === '' && styles.viviendaChipActive]}
+                        onPress={() => setSelectedViviendaId('')}
+                    >
+                        <Text style={[styles.viviendaChipText, selectedViviendaId === '' && styles.viviendaChipTextActive]}>
+                            Principal
+                        </Text>
+                    </TouchableOpacity>
+                    {myViviendas.map(v => (
+                        <TouchableOpacity
+                            key={v.id}
+                            style={[styles.viviendaChip, selectedViviendaId === v.id && styles.viviendaChipActive]}
+                            onPress={() => setSelectedViviendaId(v.id)}
+                        >
+                            <Text style={[styles.viviendaChipText, selectedViviendaId === v.id && styles.viviendaChipTextActive]}>
+                                {v.identificador}
+                            </Text>
+                        </TouchableOpacity>
+                    ))}
+                </View>
+            </View>
+        );
+    };
+
     return (
         <View style={styles.container}>
             {/* Header */}
@@ -834,33 +864,6 @@ export const MyServicesScreen = ({ navigation, route }: any) => {
                     </TouchableOpacity>
                 ))}
             </ScrollView>
-
-            {myViviendas.length > 1 && (
-                <View style={styles.viviendaSelector}>
-                    <Text style={styles.viviendaSelectorLabel}>Vivienda:</Text>
-                    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-                        <TouchableOpacity
-                            style={[styles.viviendaChip, selectedViviendaId === '' && styles.viviendaChipActive]}
-                            onPress={() => setSelectedViviendaId('')}
-                        >
-                            <Text style={[styles.viviendaChipText, selectedViviendaId === '' && styles.viviendaChipTextActive]}>
-                                Principal
-                            </Text>
-                        </TouchableOpacity>
-                        {myViviendas.map(v => (
-                            <TouchableOpacity
-                                key={v.id}
-                                style={[styles.viviendaChip, selectedViviendaId === v.id && styles.viviendaChipActive]}
-                                onPress={() => setSelectedViviendaId(v.id)}
-                            >
-                                <Text style={[styles.viviendaChipText, selectedViviendaId === v.id && styles.viviendaChipTextActive]}>
-                                    {v.identificador}
-                                </Text>
-                            </TouchableOpacity>
-                        ))}
-                    </View>
-                </View>
-            )}
 
             {doorbellServiceId && (
                 <View style={styles.doorbellStatusBar}>
@@ -1188,6 +1191,7 @@ export const MyServicesScreen = ({ navigation, route }: any) => {
                                                     </Text>
                                                 </View>
                                                 <View style={styles.cardBody}>
+                                                    {renderViviendaSelector()}
                                                     {suspended && (
                                                         <View style={{ backgroundColor: '#fef2f2', borderRadius: 8, padding: 10, marginBottom: 12 }}>
                                                             <Text style={{ fontSize: 12, color: '#b91c1c' }}>
@@ -1294,6 +1298,7 @@ export const MyServicesScreen = ({ navigation, route }: any) => {
                                                     </Text>
                                                 </View>
                                                 <View style={styles.cardBody}>
+                                                    {renderViviendaSelector()}
                                                     {suspended && (
                                                         <View style={{ backgroundColor: '#fef2f2', borderRadius: 8, padding: 10, marginBottom: 12 }}>
                                                             <Text style={{ fontSize: 12, color: '#b91c1c' }}>
@@ -1861,6 +1866,16 @@ const styles = StyleSheet.create({
         backgroundColor: Colors.secondary,
         borderBottomWidth: 1,
         borderBottomColor: Colors.border,
+    },
+    viviendaSelectorInCard: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        flexWrap: 'wrap',
+        gap: 8,
+        padding: 12,
+        backgroundColor: Colors.secondary,
+        borderRadius: 10,
+        marginBottom: 12,
     },
     viviendaSelectorLabel: {
         fontSize: 13,
