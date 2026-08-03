@@ -14,12 +14,16 @@ const PREFS_KEY = '@TuQuotaAdmin:doorbellPrefs';
 export interface DoorbellPreferences {
   enabled: boolean;
   sound: string;
+  notify: boolean;
 }
 
 const DEFAULT_PREFS: DoorbellPreferences = {
   enabled: true,
   sound: 'doorbell.wav',
+  notify: true,
 };
+
+const DOORBELL_MAX_AGE_MS = 30000;
 
 interface DoorbellContextType {
   connected: boolean;
@@ -52,10 +56,12 @@ async function applyChannelPreferences(prefs: DoorbellPreferences) {
   try {
     await Notifications.setNotificationChannelAsync('doorbell_v2', {
       name: 'Timbre',
-      importance: Notifications.AndroidImportance.MAX,
+      importance: prefs.notify
+        ? Notifications.AndroidImportance.MAX
+        : Notifications.AndroidImportance.NONE,
       vibrationPattern: [0, 500, 200, 500],
       lightColor: '#6366f1',
-      sound: prefs.enabled ? prefs.sound : null,
+      sound: prefs.enabled && prefs.notify ? prefs.sound : null,
     });
   } catch (e) {
     console.error('Error applying channel preferences:', e);
@@ -112,6 +118,9 @@ export function DoorbellProvider({ children }: { children: React.ReactNode }) {
     const subscription = Notifications.addNotificationReceivedListener(notification => {
       const data = notification.request.content.data;
       if (data?.type === 'doorbell') {
+        if (!prefsRef.current.notify) return;
+        const timestamp = typeof data.timestamp === 'number' ? data.timestamp : undefined;
+        if (timestamp && Date.now() - timestamp > DOORBELL_MAX_AGE_MS) return;
         const identifier = notification.request.identifier;
 
         setShowAlert(true);

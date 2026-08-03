@@ -30,23 +30,30 @@ interface Props {
 
 export function DoorbellSettingsModal({ visible, onClose, preferences, onUpdate }: Props) {
   const [enabled, setEnabled] = useState(preferences.enabled);
+  const [notify, setNotify] = useState(preferences.notify);
   const [selectedSound, setSelectedSound] = useState(preferences.sound);
 
   useEffect(() => {
     setEnabled(preferences.enabled);
+    setNotify(preferences.notify);
     setSelectedSound(preferences.sound);
-  }, [preferences.enabled, preferences.sound]);
+  }, [preferences.enabled, preferences.notify, preferences.sound]);
+
+  const handleNotifyToggle = async (value: boolean) => {
+    setNotify(value);
+    await onUpdate({ enabled, sound: selectedSound, notify: value });
+  };
 
   const handleToggle = async (value: boolean) => {
     setEnabled(value);
-    await onUpdate({ enabled: value, sound: selectedSound });
+    await onUpdate({ enabled: value, sound: selectedSound, notify });
   };
 
   const handleSoundSelect = async (sound: string) => {
     setSelectedSound(sound);
     playDoorbellSound(sound);
     try {
-      await onUpdate({ enabled, sound });
+      await onUpdate({ enabled, sound, notify });
     } catch (e) {
       console.error('Error al guardar preferencia de sonido:', e);
     }
@@ -54,6 +61,7 @@ export function DoorbellSettingsModal({ visible, onClose, preferences, onUpdate 
 
   const handleClose = () => {
     setEnabled(preferences.enabled);
+    setNotify(preferences.notify);
     setSelectedSound(preferences.sound);
     onClose();
   };
@@ -75,6 +83,16 @@ export function DoorbellSettingsModal({ visible, onClose, preferences, onUpdate 
               <TouchableOpacity onPress={handleClose} style={styles.closeBtn}>
                 <X size={20} color={Colors.muted} />
               </TouchableOpacity>
+            </View>
+
+            <View style={styles.toggleRowNoBorder}>
+              <Text style={styles.toggleLabel}>Notificar Timbre</Text>
+              <Switch
+                value={notify}
+                onValueChange={handleNotifyToggle}
+                trackColor={{ false: '#e2e8f0', true: '#c7d2fe' }}
+                thumbColor={notify ? '#6366f1' : '#94a3b8'}
+              />
             </View>
 
             <View style={styles.toggleRow}>
@@ -171,6 +189,13 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: '#f1f5f9',
     marginBottom: 8,
+  },
+  toggleRowNoBorder: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 12,
+    marginBottom: 4,
   },
   toggleLabel: {
     fontSize: 15,
