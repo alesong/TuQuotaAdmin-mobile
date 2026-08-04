@@ -31,6 +31,7 @@ import {
 import { ActionButton } from '../components/ActionButton';
 import { Colors } from '../constants/Colors';
 import { Config } from '../constants/Config';
+import { getResidentServicesCache, setResidentServicesCache } from '../lib/serviceCache';
 import { useAuth } from '../context/AuthContext';
 import { AlertModal } from '../components/AlertModal';
 import { useDoorbell } from '../context/DoorbellContext';
@@ -127,7 +128,7 @@ const groupAccessByDay = (items: any[]) => {
 };
 
 export const MyServicesScreen = ({ navigation, route }: any) => {
-    const { token } = useAuth();
+    const { token, user } = useAuth();
     const [loading, setLoading] = useState(false);
     const [services, setServices] = useState<any[]>([]);
     const [activeSection, setActiveSection] = useState<'gate' | 'cameras' | 'pool' | 'gym' | 'bbq' | 'salon' | 'parking' | 'visitantes' | 'others'>('gate');
@@ -181,16 +182,20 @@ export const MyServicesScreen = ({ navigation, route }: any) => {
     const [cameraStreams, setCameraStreams] = useState<Record<string, string | null>>({});
     const [loadingStreams, setLoadingStreams] = useState<Record<string, boolean>>({});
 
-    const fetchMyServicesRef = useRef<(() => Promise<void>) | null>(null);
+    const fetchMyServicesRef = useRef<((options?: { notifyOnError?: boolean }) => Promise<void>) | null>(null);
     const fetchVehiclesRef = useRef<(() => Promise<void>) | null>(null);
+    // Tracks whether the user already has services rendered (from cache or a previous load),
+    // so background refreshes don't show a blocking spinner.
+    const servicesReadyRef = useRef(false);
 
     const showAlert = (title: string, message: string, type: 'success' | 'error' | 'warning' = 'success') => {
         setAlertConfig({ title, message, type });
         setIsAlertVisible(true);
     };
 
-    const fetchMyServices = async () => {
-        setLoading(true);
+    const fetchMyServices = async (options?: { notifyOnError?: boolean }) => {
+        // Only block the screen with a spinner if we have nothing cached yet.
+        setLoading(!servicesReadyRef.current);
         try {
             const response = await fetch(`${API_URL}/resident-services/my-services`, {
                 cache: 'no-cache',
@@ -205,6 +210,13 @@ export const MyServicesScreen = ({ navigation, route }: any) => {
                     new Map(data.map((s: any) => [s.serviceId, s])).values()
                 );
                 setServices(uniqueServices);
+                if (user?.id) {
+                    setResidentServicesCache(user.id, {
+                        services: uniqueServices,
+                        hasServices: data.length > 0,
+                        updatedAt: Date.now(),
+                    });
+                }
                 
                 // Configurar servicio por defecto para QR
                 const qrService = data.find((s: any) =>
@@ -214,14 +226,42 @@ export const MyServicesScreen = ({ navigation, route }: any) => {
                 if (qrService) {
                     setSelectedServiceForQr(qrService.serviceId);
                 }
+            } else if (options?.notifyOnError) {
+                showAlert(
+                    'No se pudo actualizar',
+                    `No se pudo obtener la información actualizada de los servicios. Motivo: el servidor respondió con el estado ${response.status}.`,
+                    'error'
+                );
             }
-        } catch (error) {
+        } catch (error: any) {
             console.error('Error fetching resident services:', error);
+            if (options?.notifyOnError) {
+                showAlert(
+                    'No se pudo actualizar',
+                    `No se pudo obtener la información actualizada de los servicios. Motivo: ${error?.message || 'error de red'}`,
+                    'error'
+                );
+            }
         } finally {
             setLoading(false);
         }
     };
     fetchMyServicesRef.current = fetchMyServices;
+
+    // Seed services from cache so the screen renders instantly on open.
+    useEffect(() => {
+        const uid = user?.id;
+        if (!uid) return;
+        getResidentServicesCache(uid).then(cache => {
+            if (cache && cache.services?.length) {
+                servicesReadyRef.current = true;
+                setServices(cache.services);
+            }
+            // Background refresh on open; informs the user if it fails so they know
+            // they are seeing cached/stale info.
+            fetchMyServicesRef.current?.({ notifyOnError: true });
+        });
+    }, [user?.id]);
 
     const { connected: doorbellConnected, showAlert: showDoorbellAlert, doorbellServiceId, preferences, updatePreferences } = useDoorbell();
     const [showDoorbellSettings, setShowDoorbellSettings] = useState(false);
@@ -828,7 +868,7 @@ export const MyServicesScreen = ({ navigation, route }: any) => {
                     <ArrowLeft color={Colors.text} size={24} />
                 </TouchableOpacity>
                 <Text style={styles.headerTitle}>Mis Servicios</Text>
-                <TouchableOpacity onPress={fetchMyServices} style={styles.refreshBtn}>
+                <TouchableOpacity onPress={() => fetchMyServices()} style={styles.refreshBtn}>
                     <RefreshCw color={Colors.primary} size={18} />
                 </TouchableOpacity>
             </View>

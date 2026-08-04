@@ -20,6 +20,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { Assets } from '../constants/Assets';
 import api from '../lib/api';
+import { getResidentServicesCache, setResidentServicesCache } from '../lib/serviceCache';
 
 const months = ["Ene", "Feb", "Mar", "Abr", "Mayo", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"];
 
@@ -201,6 +202,20 @@ export const HomeScreen = ({ navigation }: any) => {
         loadLastCondo();
     }, []);
 
+    // Seed "Mis Servicios" state from cache so the button appears instantly on open
+    useEffect(() => {
+        const uid = authUser?.id;
+        if (!uid) return;
+        getResidentServicesCache(uid).then(cache => {
+            if (cache) {
+                setHasPortalServices(cache.hasServices);
+            }
+            // Background refresh on open; informs the user if it fails so they know
+            // they are seeing cached/stale info.
+            fetchPortalServicesStatus({ notifyOnError: true });
+        });
+    }, [authUser?.id]);
+
     useEffect(() => {
         if (!lastSelectedCondoLoading && hasUnits && availableCondos.length > 0) {
             if (!selectedCondoId || !condosMap.has(selectedCondoId)) {
@@ -269,16 +284,35 @@ export const HomeScreen = ({ navigation }: any) => {
         }
     };
 
-    const fetchPortalServicesStatus = async () => {
+    const fetchPortalServicesStatus = async (options?: { notifyOnError?: boolean }) => {
         try {
             const response = await api.get('/resident-services/has-any');
             if (response.ok) {
                 const data = await response.json();
-                setHasPortalServices(data.hasServices);
+                const hasServices = !!data.hasServices;
+                setHasPortalServices(hasServices);
+                if (authUser?.id) {
+                    const cache = await getResidentServicesCache(authUser.id);
+                    setResidentServicesCache(authUser.id, {
+                        services: cache?.services || [],
+                        hasServices,
+                        updatedAt: Date.now(),
+                    });
+                }
+            } else if (options?.notifyOnError) {
+                Alert.alert(
+                    'No se pudo actualizar',
+                    `No se pudo obtener la información actualizada de los servicios. Motivo: el servidor respondió con el estado ${response.status}.`
+                );
             }
-        } catch (e) {
+        } catch (e: any) {
             console.error('[HomeScreen] Error fetching portal services status:', e);
-            setHasPortalServices(false);
+            if (options?.notifyOnError) {
+                Alert.alert(
+                    'No se pudo actualizar',
+                    `No se pudo obtener la información actualizada de los servicios. Motivo: ${e?.message || 'error de red'}`
+                );
+            }
         }
     };
 
@@ -511,6 +545,19 @@ export const HomeScreen = ({ navigation }: any) => {
         }));
     };
 
+    const getDefaultStatementYear = (summary: any) => {
+        const allItems = [...(summary?.pendientes || []), ...(summary?.pagadas || [])];
+        const currentYear = new Date().getFullYear();
+        const extractYear = (item: any) => {
+            const dateStr = item.fechaVencimiento || item.fechaPago;
+            return item.anio || (dateStr ? new Date(dateStr).getFullYear() : 2024);
+        };
+        if (allItems.some((item: any) => extractYear(item) === currentYear)) {
+            return currentYear;
+        }
+        return allItems.reduce((max: number, item: any) => Math.max(max, extractYear(item)), currentYear);
+    };
+
     const isRestricted = selectedCondo?.estado === 'PENDIENTE' || selectedCondo?.estado === 'BLOQUEADO';
 
     const handlePaymentPress = (onPress: () => void) => {
@@ -729,6 +776,7 @@ export const HomeScreen = ({ navigation }: any) => {
                                             style={[styles.statementButton, { backgroundColor: summary.balance > 0 ? '#f59e0b' : '#10b981' }]}
                                             onPress={() => {
                                                 setSelectedViviendaForStatement(vivienda);
+                                                setExpandedYears({ [getDefaultStatementYear(vivienda.summary)]: true });
                                                 setIsStatementModalVisible(true);
                                             }}
                                         >
