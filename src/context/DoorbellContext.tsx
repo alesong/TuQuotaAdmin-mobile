@@ -1,5 +1,5 @@
 import React, { createContext, useState, useEffect, useCallback, useRef, useContext } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Platform } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Platform, Image } from 'react-native';
 import { Bell, X } from 'lucide-react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Config } from '../constants/Config';
@@ -26,19 +26,21 @@ const DEFAULT_PREFS: DoorbellPreferences = {
 const DOORBELL_MAX_AGE_MS = 30000;
 
 interface DoorbellContextType {
-  connected: boolean;
-  showAlert: boolean;
-  doorbellServiceId: string | null;
-  preferences: DoorbellPreferences;
-  triggerRing: () => void;
-  dismissAlert: () => void;
-  updatePreferences: (prefs: DoorbellPreferences) => Promise<void>;
+    connected: boolean;
+    showAlert: boolean;
+    doorbellServiceId: string | null;
+    doorbellProvider: string | null;
+    preferences: DoorbellPreferences;
+    dismissAlert: () => void;
+    triggerRing: () => void;
+    updatePreferences: (prefs: DoorbellPreferences) => Promise<void>;
 }
 
 const DoorbellContext = createContext<DoorbellContextType>({
   connected: true,
   showAlert: false,
   doorbellServiceId: null,
+  doorbellProvider: null,
   preferences: DEFAULT_PREFS,
   triggerRing: () => {},
   dismissAlert: () => {},
@@ -71,7 +73,9 @@ async function applyChannelPreferences(prefs: DoorbellPreferences) {
 export function DoorbellProvider({ children }: { children: React.ReactNode }) {
   const { token } = useAuth();
   const [doorbellServiceId, setDoorbellServiceId] = useState<string | null>(null);
+  const [doorbellProvider, setDoorbellProvider] = useState<string | null>(null);
   const [showAlert, setShowAlert] = useState(false);
+  const [lastSnapshot, setLastSnapshot] = useState<string | null>(null);
   const [preferences, setPreferences] = useState<DoorbellPreferences>(DEFAULT_PREFS);
   const alertTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const prefsRef = useRef<DoorbellPreferences>(DEFAULT_PREFS);
@@ -104,8 +108,13 @@ export function DoorbellProvider({ children }: { children: React.ReactNode }) {
       .then(data => {
         if (cancelled) return;
         const arr = Array.isArray(data) ? data : [];
-        const doorbellService = arr.find((s: any) => s.provider === 'Doorbell');
+        const isDoorbellProvider = (p: string) => p === 'Doorbell' || p === 'TuyaSmart';
+        const doorbellService = arr.find((s: any) => isDoorbellProvider(s.provider));
         setDoorbellServiceId(doorbellService?.serviceId || null);
+        setDoorbellProvider(doorbellService?.provider || null);
+        if (typeof doorbellService?.lastSnapshot === 'string') {
+          setLastSnapshot(doorbellService.lastSnapshot);
+        }
       })
       .catch(() => {});
 
@@ -123,6 +132,7 @@ export function DoorbellProvider({ children }: { children: React.ReactNode }) {
         if (timestamp && Date.now() - timestamp > DOORBELL_MAX_AGE_MS) return;
         const identifier = notification.request.identifier;
 
+        if (typeof data.image === 'string') setLastSnapshot(data.image);
         setShowAlert(true);
         if (prefsRef.current.enabled) {
           playDoorbellSound(prefsRef.current.sound);
@@ -179,7 +189,7 @@ export function DoorbellProvider({ children }: { children: React.ReactNode }) {
 
   return (
     <DoorbellContext.Provider
-      value={{ connected: true, showAlert, doorbellServiceId, preferences, triggerRing: handleRing, dismissAlert, updatePreferences }}
+      value={{ connected: true, showAlert, doorbellServiceId, doorbellProvider, preferences, triggerRing: handleRing, dismissAlert, updatePreferences }}
     >
       {children}
       {showAlert && (
@@ -189,6 +199,9 @@ export function DoorbellProvider({ children }: { children: React.ReactNode }) {
           <TouchableOpacity onPress={dismissAlert} style={styles.closeBtn}>
             <X size={20} color="#fff" />
           </TouchableOpacity>
+          {lastSnapshot ? (
+            <Image source={{ uri: lastSnapshot }} style={styles.alertImage} resizeMode="cover" />
+          ) : null}
         </View>
       )}
     </DoorbellContext.Provider>
@@ -218,6 +231,12 @@ const styles = StyleSheet.create({
   },
   closeBtn: {
     padding: 4,
+  },
+  alertImage: {
+    width: '100%',
+    height: 220,
+    borderRadius: 8,
+    marginTop: 8,
   },
 });
 

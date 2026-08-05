@@ -263,7 +263,7 @@ export const MyServicesScreen = ({ navigation, route }: any) => {
         });
     }, [user?.id]);
 
-    const { connected: doorbellConnected, showAlert: showDoorbellAlert, doorbellServiceId, preferences, updatePreferences } = useDoorbell();
+    const { connected: doorbellConnected, showAlert: showDoorbellAlert, doorbellServiceId, doorbellProvider, preferences, updatePreferences } = useDoorbell();
     const [showDoorbellSettings, setShowDoorbellSettings] = useState(false);
 
     const fetchMisViviendas = async () => {
