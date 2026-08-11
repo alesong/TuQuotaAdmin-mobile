@@ -1509,23 +1509,26 @@ export const MyServicesScreen = ({ navigation, route }: any) => {
 
                                                     {s.provider === 'TuyaSmart' && (
                                                         <>
-                                                            {s.lastSnapshot ? (
-                                                                <TouchableOpacity
-                                                                    style={styles.doorbellSnapshotWrap}
-                                                                    onPress={() => setDoorbellPreviewUrl(s.lastSnapshot)}
-                                                                >
-                                                                    <Image
-                                                                        source={{ uri: s.lastSnapshot }}
-                                                                        style={styles.doorbellSnapshotImg}
-                                                                        resizeMode="cover"
-                                                                    />
-                                                                </TouchableOpacity>
-                                                            ) : (
-                                                                <View style={[styles.doorbellSnapshotWrap, styles.doorbellSnapshotEmpty]}>
-                                                                    <Video size={22} color={Colors.muted} />
-                                                                    <Text style={styles.doorbellSnapshotEmptyText}>Sin foto del timbre aún</Text>
-                                                                </View>
-                                                            )}
+                                                            {(() => {
+                                                                const snapshot = route?.params?.imageUrl || s.lastSnapshot;
+                                                                return snapshot ? (
+                                                                    <TouchableOpacity
+                                                                        style={styles.doorbellSnapshotWrap}
+                                                                        onPress={() => setDoorbellPreviewUrl(snapshot)}
+                                                                    >
+                                                                        <Image
+                                                                            source={{ uri: snapshot }}
+                                                                            style={styles.doorbellSnapshotImg}
+                                                                            resizeMode="cover"
+                                                                        />
+                                                                    </TouchableOpacity>
+                                                                ) : (
+                                                                    <View style={[styles.doorbellSnapshotWrap, styles.doorbellSnapshotEmpty]}>
+                                                                        <Video size={22} color={Colors.muted} />
+                                                                        <Text style={styles.doorbellSnapshotEmptyText}>Sin foto del timbre aún</Text>
+                                                                    </View>
+                                                                );
+                                                            })()}
 
                                                             <TouchableOpacity
                                                                 style={styles.doorbellHistoryToggle}

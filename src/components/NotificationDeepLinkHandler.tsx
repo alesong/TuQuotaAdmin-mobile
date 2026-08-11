@@ -5,16 +5,16 @@ import { navigationRef, navigate } from '../navigation/RootNavigation';
 
 const POLL_INTERVAL = 300;
 
-function tryNavigateToMyServices(): boolean {
+function tryNavigateToMyServices(imageUrl?: string): boolean {
   if (!navigationRef.isReady()) return false;
-  navigate('MyServices', { initialSection: 'cameras' });
+  navigate('MyServices', { initialSection: 'others', imageUrl });
   return true;
 }
 
-function tryNavigateWithRetry() {
-  if (tryNavigateToMyServices()) return;
+function tryNavigateWithRetry(imageUrl?: string) {
+  if (tryNavigateToMyServices(imageUrl)) return;
   const interval = setInterval(() => {
-    if (tryNavigateToMyServices()) clearInterval(interval);
+    if (tryNavigateToMyServices(imageUrl)) clearInterval(interval);
   }, POLL_INTERVAL);
 }
 
@@ -28,13 +28,18 @@ export default function NotificationDeepLinkHandler() {
       lastNotificationResponse?.notification.request.content.data?.type === 'doorbell';
     if (!isDoorbell || handledColdStart.current) return;
 
+    const imageUrl =
+      typeof lastNotificationResponse?.notification.request.content.data?.image === 'string'
+        ? lastNotificationResponse.notification.request.content.data.image
+        : undefined;
+
     const tryNavigate = (): boolean => {
       if (handledColdStart.current) return true;
       if (!navigationRef.isReady()) return false;
       if (loading || !user) return false;
 
       handledColdStart.current = true;
-      navigate('MyServices', { initialSection: 'cameras' });
+      navigate('MyServices', { initialSection: 'others', imageUrl });
       return true;
     };
 
@@ -48,10 +53,10 @@ export default function NotificationDeepLinkHandler() {
   useEffect(() => {
     const subscription = Notifications.addNotificationResponseReceivedListener(
       (response) => {
-        const data = response.notification.request.content.data;
-        if (data?.type === 'doorbell') {
-          tryNavigateWithRetry();
-        }
+      const data = response.notification.request.content.data;
+      if (data?.type === 'doorbell') {
+        tryNavigateWithRetry(typeof data.image === 'string' ? data.image : undefined);
+      }
       },
     );
 
