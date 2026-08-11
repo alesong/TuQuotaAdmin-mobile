@@ -116,7 +116,7 @@ export const ZoomableImage = ({ uri, style, resizeMode = 'contain' }: ZoomableIm
 
     return (
         <View
-            style={{ flex: 1, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}
+            style={{ flex: 1, width: '100%', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}
             {...panResponder.panHandlers}
             {...((Platform.OS === 'web' ? { onWheel: handleWheel } : {}) as any)}
         >
