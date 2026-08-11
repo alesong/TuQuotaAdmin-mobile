@@ -27,6 +27,7 @@ import {
     Settings,
     Trash2,
     History,
+    Clock,
 } from 'lucide-react-native';
 import { ActionButton } from '../components/ActionButton';
 import { Colors } from '../constants/Colors';
@@ -37,6 +38,7 @@ import { AlertModal } from '../components/AlertModal';
 import { useDoorbell } from '../context/DoorbellContext';
 import { DoorbellSettingsModal } from '../components/DoorbellSettingsModal';
 import { CameraStreamViewer } from '../components/CameraStreamViewer';
+import { ZoomableImage } from '../components/ZoomableImage';
 import { toDataURL } from 'qrcode';
 
 const AMENITY_CONFIG: Record<string, { label: string, searchTerm: string, subtitle: string }> = {
@@ -65,6 +67,13 @@ const toDayKey = (date: Date) =>
 
 const formatHora = (iso: string) => {
     const d = new Date(iso);
+    return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+};
+
+const formatSnapshotTime = (ts: any) => {
+    if (!ts) return null;
+    const d = new Date(typeof ts === 'number' ? ts : String(ts));
+    if (isNaN(d.getTime())) return null;
     return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 };
 
@@ -1512,16 +1521,26 @@ export const MyServicesScreen = ({ navigation, route }: any) => {
                                                             {(() => {
                                                                 const snapshot = route?.params?.imageUrl || s.lastSnapshot;
                                                                 return snapshot ? (
-                                                                    <TouchableOpacity
-                                                                        style={styles.doorbellSnapshotWrap}
-                                                                        onPress={() => setDoorbellPreviewUrl(snapshot)}
-                                                                    >
-                                                                        <Image
-                                                                            source={{ uri: snapshot }}
-                                                                            style={styles.doorbellSnapshotImg}
-                                                                            resizeMode="cover"
-                                                                        />
-                                                                    </TouchableOpacity>
+                                                                    <View style={styles.doorbellSnapshotWrap}>
+                                                                        <TouchableOpacity
+                                                                            style={{ width: '100%' }}
+                                                                            onPress={() => setDoorbellPreviewUrl(snapshot)}
+                                                                        >
+                                                                            <Image
+                                                                                source={{ uri: snapshot }}
+                                                                                style={styles.doorbellSnapshotImg}
+                                                                                resizeMode="cover"
+                                                                            />
+                                                                        </TouchableOpacity>
+                                                                        {formatSnapshotTime(s.lastSnapshotAt) && (
+                                                                            <View style={styles.doorbellSnapshotTimeBadge}>
+                                                                                <Clock size={12} color="#fff" />
+                                                                                <Text style={styles.doorbellSnapshotTimeText}>
+                                                                                    {formatSnapshotTime(s.lastSnapshotAt)}
+                                                                                </Text>
+                                                                            </View>
+                                                                        )}
+                                                                    </View>
                                                                 ) : (
                                                                     <View style={[styles.doorbellSnapshotWrap, styles.doorbellSnapshotEmpty]}>
                                                                         <Video size={22} color={Colors.muted} />
@@ -1628,11 +1647,7 @@ export const MyServicesScreen = ({ navigation, route }: any) => {
                         >
                             <Text style={styles.previewCloseText}>✕</Text>
                         </TouchableOpacity>
-                        <Image
-                            source={{ uri: doorbellPreviewUrl }}
-                            style={styles.previewImage}
-                            resizeMode="contain"
-                        />
+                        <ZoomableImage uri={doorbellPreviewUrl} style={styles.previewImage} />
                     </View>
                 </Modal>
             )}
@@ -2123,6 +2138,7 @@ const styles = StyleSheet.create({
         paddingVertical: 12,
     },
     doorbellSnapshotWrap: {
+        position: 'relative',
         marginTop: 12,
         borderRadius: 10,
         overflow: 'hidden',
@@ -2140,6 +2156,23 @@ const styles = StyleSheet.create({
     doorbellSnapshotEmptyText: {
         fontSize: 12,
         color: Colors.muted,
+    },
+    doorbellSnapshotTimeBadge: {
+        position: 'absolute',
+        bottom: 8,
+        left: 8,
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 4,
+        backgroundColor: 'rgba(0,0,0,0.65)',
+        borderRadius: 6,
+        paddingHorizontal: 8,
+        paddingVertical: 4,
+    },
+    doorbellSnapshotTimeText: {
+        fontSize: 11,
+        fontWeight: '600',
+        color: '#fff',
     },
     doorbellSnapshotImg: {
         width: '100%',
