@@ -170,6 +170,13 @@ export const MyServicesScreen = ({ navigation, route }: any) => {
     const [accessHistory, setAccessHistory] = useState<any[]>([]);
     const [accessHistoryLoading, setAccessHistoryLoading] = useState(false);
 
+    // Doorbell snapshot history states
+    const [doorbellHistoryOpen, setDoorbellHistoryOpen] = useState(false);
+    const [doorbellHistory, setDoorbellHistory] = useState<any[]>([]);
+    const [doorbellHistoryLoading, setDoorbellHistoryLoading] = useState(false);
+    const [doorbellPreviewUrl, setDoorbellPreviewUrl] = useState<string | null>(null);
+    const doorbellHistoryFetchedRef = useRef(false);
+
     // Reservation states
     const [reservations, setReservations] = useState<Record<string, any[]>>({});
     const [reservationsLoading, setReservationsLoading] = useState<Record<string, boolean>>({});
@@ -247,6 +254,26 @@ export const MyServicesScreen = ({ navigation, route }: any) => {
         }
     };
     fetchMyServicesRef.current = fetchMyServices;
+
+    const fetchDoorbellHistory = useCallback(async () => {
+        if (!token) return;
+        setDoorbellHistoryLoading(true);
+        try {
+            const response = await fetch(`${API_URL}/resident-services/doorbell/history`, {
+                cache: 'no-cache',
+                headers: { 'Authorization': `Bearer ${token}` },
+            });
+            if (response.ok) {
+                const data = await response.json();
+                setDoorbellHistory(Array.isArray(data) ? data : []);
+                doorbellHistoryFetchedRef.current = true;
+            }
+        } catch (error: any) {
+            console.error('Error fetching doorbell history:', error);
+        } finally {
+            setDoorbellHistoryLoading(false);
+        }
+    }, [token, API_URL]);
 
     // Seed services from cache so the screen renders instantly on open.
     useEffect(() => {
@@ -1479,6 +1506,81 @@ export const MyServicesScreen = ({ navigation, route }: any) => {
                                                     <Text style={styles.cardText}>
                                                         {s.description}
                                                     </Text>
+
+                                                    {s.provider === 'TuyaSmart' && (
+                                                        <>
+                                                            {s.lastSnapshot ? (
+                                                                <TouchableOpacity
+                                                                    style={styles.doorbellSnapshotWrap}
+                                                                    onPress={() => setDoorbellPreviewUrl(s.lastSnapshot)}
+                                                                >
+                                                                    <Image
+                                                                        source={{ uri: s.lastSnapshot }}
+                                                                        style={styles.doorbellSnapshotImg}
+                                                                        resizeMode="cover"
+                                                                    />
+                                                                </TouchableOpacity>
+                                                            ) : (
+                                                                <View style={[styles.doorbellSnapshotWrap, styles.doorbellSnapshotEmpty]}>
+                                                                    <Video size={22} color={Colors.muted} />
+                                                                    <Text style={styles.doorbellSnapshotEmptyText}>Sin foto del timbre aún</Text>
+                                                                </View>
+                                                            )}
+
+                                                            <TouchableOpacity
+                                                                style={styles.doorbellHistoryToggle}
+                                                                onPress={() => {
+                                                                    const next = !doorbellHistoryOpen;
+                                                                    setDoorbellHistoryOpen(next);
+                                                                    if (next && !doorbellHistoryFetchedRef.current) {
+                                                                        fetchDoorbellHistory();
+                                                                    }
+                                                                }}
+                                                            >
+                                                                <History size={16} color={Colors.primary} />
+                                                                <Text style={styles.doorbellHistoryToggleText}>
+                                                                    {doorbellHistoryOpen ? 'Ocultar historial' : 'Historial del timbre (3 días)'}
+                                                                </Text>
+                                                                <Text style={styles.doorbellHistoryChevron}>
+                                                                    {doorbellHistoryOpen ? '▾' : '▸'}
+                                                                </Text>
+                                                            </TouchableOpacity>
+
+                                                            {doorbellHistoryOpen && (
+                                                                <View style={styles.doorbellHistoryBody}>
+                                                                    {doorbellHistoryLoading ? (
+                                                                        <ActivityIndicator size="small" color={Colors.primary} style={{ marginVertical: 12 }} />
+                                                                    ) : doorbellHistory.length === 0 ? (
+                                                                        <Text style={styles.accessHistoryEmpty}>
+                                                                            Sin timbres registrados en los últimos 3 días.
+                                                                        </Text>
+                                                                    ) : (
+                                                                        doorbellHistory.map((group: any) => (
+                                                                            <View key={group.date} style={styles.doorbellHistoryGroup}>
+                                                                                <Text style={styles.doorbellHistoryDay}>{group.label}</Text>
+                                                                                <View style={styles.doorbellHistoryGrid}>
+                                                                                    {group.items.map((item: any) => (
+                                                                                        <TouchableOpacity
+                                                                                            key={item.id}
+                                                                                            style={styles.doorbellHistoryThumb}
+                                                                                            onPress={() => setDoorbellPreviewUrl(item.imageUrl)}
+                                                                                        >
+                                                                                            <Image
+                                                                                                source={{ uri: item.imageUrl }}
+                                                                                                style={styles.doorbellHistoryThumbImg}
+                                                                                                resizeMode="cover"
+                                                                                            />
+                                                                                            <Text style={styles.doorbellHistoryTime}>{item.time}</Text>
+                                                                                        </TouchableOpacity>
+                                                                                    ))}
+                                                                                </View>
+                                                                            </View>
+                                                                        ))
+                                                                    )}
+                                                                </View>
+                                                            )}
+                                                        </>
+                                                    )}
                                                 </View>
                                             </View>
                                         ))}
@@ -1508,6 +1610,29 @@ export const MyServicesScreen = ({ navigation, route }: any) => {
                 preferences={preferences}
                 onUpdate={updatePreferences}
             />
+
+            {doorbellPreviewUrl && (
+                <Modal
+                    transparent
+                    visible
+                    animationType="fade"
+                    onRequestClose={() => setDoorbellPreviewUrl(null)}
+                >
+                    <View style={styles.previewOverlay}>
+                        <TouchableOpacity
+                            style={styles.previewCloseBtn}
+                            onPress={() => setDoorbellPreviewUrl(null)}
+                        >
+                            <Text style={styles.previewCloseText}>✕</Text>
+                        </TouchableOpacity>
+                        <Image
+                            source={{ uri: doorbellPreviewUrl }}
+                            style={styles.previewImage}
+                            resizeMode="contain"
+                        />
+                    </View>
+                </Modal>
+            )}
 
             {pickerField && (
                 <Modal
@@ -1993,6 +2118,108 @@ const styles = StyleSheet.create({
         color: Colors.muted,
         textAlign: 'center',
         paddingVertical: 12,
+    },
+    doorbellSnapshotWrap: {
+        marginTop: 12,
+        borderRadius: 10,
+        overflow: 'hidden',
+        borderWidth: 1,
+        borderColor: Colors.border,
+    },
+    doorbellSnapshotEmpty: {
+        paddingVertical: 22,
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 6,
+        backgroundColor: Colors.secondary,
+        borderStyle: 'dashed',
+    },
+    doorbellSnapshotEmptyText: {
+        fontSize: 12,
+        color: Colors.muted,
+    },
+    doorbellSnapshotImg: {
+        width: '100%',
+        height: 200,
+    },
+    doorbellHistoryToggle: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+        marginTop: 12,
+        paddingVertical: 10,
+        paddingHorizontal: 12,
+        borderRadius: 10,
+        backgroundColor: Colors.primary + '14',
+    },
+    doorbellHistoryToggleText: {
+        flex: 1,
+        fontSize: 13,
+        fontWeight: '600',
+        color: Colors.primary,
+    },
+    doorbellHistoryChevron: {
+        fontSize: 14,
+        color: Colors.primary,
+    },
+    doorbellHistoryBody: {
+        marginTop: 8,
+    },
+    doorbellHistoryGroup: {
+        marginBottom: 12,
+    },
+    doorbellHistoryDay: {
+        fontSize: 12,
+        fontWeight: 'bold',
+        color: Colors.muted,
+        textTransform: 'uppercase',
+        letterSpacing: 0.5,
+        marginBottom: 6,
+    },
+    doorbellHistoryGrid: {
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        gap: 8,
+    },
+    doorbellHistoryThumb: {
+        width: '30%',
+        borderRadius: 8,
+        overflow: 'hidden',
+        borderWidth: 1,
+        borderColor: Colors.border,
+    },
+    doorbellHistoryThumbImg: {
+        width: '100%',
+        height: 72,
+    },
+    doorbellHistoryTime: {
+        fontSize: 10,
+        color: Colors.muted,
+        textAlign: 'center',
+        paddingVertical: 4,
+    },
+    previewOverlay: {
+        flex: 1,
+        backgroundColor: 'rgba(0,0,0,0.85)',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: 20,
+    },
+    previewCloseBtn: {
+        position: 'absolute',
+        top: 48,
+        right: 20,
+        zIndex: 10,
+        padding: 8,
+    },
+    previewCloseText: {
+        fontSize: 24,
+        color: '#fff',
+        fontWeight: 'bold',
+    },
+    previewImage: {
+        width: '100%',
+        height: '85%',
     },
     accessHistoryDay: {
         marginBottom: 10,
