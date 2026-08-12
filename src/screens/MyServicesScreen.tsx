@@ -10,6 +10,7 @@ import {
     Platform,
     Image,
     Modal,
+    BackHandler,
 } from 'react-native';
 import DateTimePicker, { DateTimePickerAndroid } from '@react-native-community/datetimepicker';
 import { useFocusEffect } from '@react-navigation/native';
@@ -312,6 +313,17 @@ export const MyServicesScreen = ({ navigation, route }: any) => {
             setDoorbellHistoryLoading(false);
         }
     }, [token, API_URL]);
+
+    // Cierra el preview del timbre con el botón atrás de Android (equivalente
+    // al onRequestClose del Modal que se retiró del overlay).
+    useEffect(() => {
+        if (!doorbellPreviewUrl) return;
+        const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+            setDoorbellPreviewUrl(null);
+            return true;
+        });
+        return () => sub.remove();
+    }, [doorbellPreviewUrl]);
 
     // Seed services from cache so the screen renders instantly on open.
     useEffect(() => {
@@ -1668,22 +1680,15 @@ export const MyServicesScreen = ({ navigation, route }: any) => {
             />
 
             {doorbellPreviewUrl && (
-                <Modal
-                    transparent
-                    visible
-                    animationType="fade"
-                    onRequestClose={() => setDoorbellPreviewUrl(null)}
-                >
-                    <View style={styles.previewOverlay}>
-                        <TouchableOpacity
-                            style={styles.previewCloseBtn}
-                            onPress={() => setDoorbellPreviewUrl(null)}
-                        >
-                            <Text style={styles.previewCloseText}>✕</Text>
-                        </TouchableOpacity>
-                        <ZoomableImage uri={doorbellPreviewUrl} style={styles.previewImage} />
-                    </View>
-                </Modal>
+                <View style={styles.previewOverlay}>
+                    <TouchableOpacity
+                        style={styles.previewCloseBtn}
+                        onPress={() => setDoorbellPreviewUrl(null)}
+                    >
+                        <Text style={styles.previewCloseText}>✕</Text>
+                    </TouchableOpacity>
+                    <ZoomableImage uri={doorbellPreviewUrl} style={styles.previewImage} />
+                </View>
             )}
 
             {pickerField && (
@@ -2282,11 +2287,16 @@ const styles = StyleSheet.create({
         paddingVertical: 4,
     },
     previewOverlay: {
-        flex: 1,
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
         backgroundColor: 'rgba(0,0,0,0.85)',
         alignItems: 'center',
         justifyContent: 'center',
         padding: 20,
+        zIndex: 10000,
     },
     previewCloseBtn: {
         position: 'absolute',
