@@ -9,7 +9,7 @@ import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { NavigationContainer } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Constants from 'expo-constants';
-import { AuthProvider, useAuth, AlertProvider, initializeConfig, registerAssets, registerForPushNotificationsAsync, setStorageProvider, setupNotificationHandler, DoorbellProvider } from './src/index';
+import { AuthProvider, useAuth, AlertProvider, initializeConfig, registerAssets, registerForPushNotificationsAsync, setStorageProvider, setupNotificationHandler, DoorbellProvider, getStoredPushToken } from './src/index';
 import NotificationDeepLinkHandler from './src/components/NotificationDeepLinkHandler';
 import { navigationRef } from './src/navigation/RootNavigation';
 import { AppNavigator } from './src/navigation/AppNavigator';
@@ -41,11 +41,22 @@ function PushRegistration() {
     if (!user?.id || registered.current) return;
     registered.current = true;
 
-    registerForPushNotificationsAsync(EAS_PROJECT_ID, user.id).then(token => {
-      if (token) {
-        console.log('Push token registered for user', user.id);
+    (async () => {
+      const stored = await getStoredPushToken();
+      if (stored) {
+        console.log('Push token ya registrado en este dispositivo');
+        return;
       }
-    });
+      for (let attempt = 1; attempt <= 5; attempt++) {
+        const token = await registerForPushNotificationsAsync(EAS_PROJECT_ID, user.id);
+        if (token) {
+          console.log('Push token registered for user', user.id);
+          return;
+        }
+        console.log(`Reintentando registro push (intento ${attempt}/5)...`);
+        await new Promise(res => setTimeout(res, 2000 * attempt));
+      }
+    })();
   }, [user?.id]);
 
   return null;

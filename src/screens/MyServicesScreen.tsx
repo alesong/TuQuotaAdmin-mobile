@@ -28,6 +28,7 @@ import {
     Trash2,
     History,
     Clock,
+    Bell,
 } from 'lucide-react-native';
 import { ActionButton } from '../components/ActionButton';
 import { Colors } from '../constants/Colors';
@@ -74,7 +75,10 @@ const formatSnapshotTime = (ts: any) => {
     if (!ts) return null;
     const d = new Date(typeof ts === 'number' ? ts : String(ts));
     if (isNaN(d.getTime())) return null;
-    return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+    let h = d.getHours();
+    const period = h >= 12 ? 'pm' : 'am';
+    h = h % 12 === 0 ? 12 : h % 12;
+    return `${h}:${String(d.getMinutes()).padStart(2, '0')} ${period}`;
 };
 
 const fechaStrToDate = (fecha: string) => {
@@ -1581,20 +1585,25 @@ export const MyServicesScreen = ({ navigation, route }: any) => {
                                                                             <View key={group.date} style={styles.doorbellHistoryGroup}>
                                                                                 <Text style={styles.doorbellHistoryDay}>{group.label}</Text>
                                                                                 <View style={styles.doorbellHistoryGrid}>
-                                                                                    {group.items.map((item: any) => (
-                                                                                        <TouchableOpacity
-                                                                                            key={item.id}
-                                                                                            style={styles.doorbellHistoryThumb}
-                                                                                            onPress={() => setDoorbellPreviewUrl(item.imageUrl)}
-                                                                                        >
-                                                                                            <Image
-                                                                                                source={{ uri: item.imageUrl }}
-                                                                                                style={styles.doorbellHistoryThumbImg}
-                                                                                                resizeMode="cover"
-                                                                                            />
-                                                                                            <Text style={styles.doorbellHistoryTime}>{item.time}</Text>
-                                                                                        </TouchableOpacity>
-                                                                                    ))}
+                                                    {group.items.map((item: any) => (
+                                                        <TouchableOpacity
+                                                            key={item.id}
+                                                            style={[styles.doorbellHistoryThumb, item.type === 'ring' && styles.doorbellHistoryThumbRing]}
+                                                            onPress={() => setDoorbellPreviewUrl(item.imageUrl)}
+                                                        >
+                                                            <Image
+                                                                source={{ uri: item.imageUrl }}
+                                                                style={styles.doorbellHistoryThumbImg}
+                                                                resizeMode="cover"
+                                                            />
+                                                            {item.type === 'ring' && (
+                                                                <View style={styles.doorbellHistoryThumbBadge}>
+                                                                    <Bell size={10} color="#fff" />
+                                                                </View>
+                                                            )}
+                                                            <Text style={styles.doorbellHistoryTime}>{item.time}</Text>
+                                                        </TouchableOpacity>
+                                                    ))}
                                                                                 </View>
                                                                             </View>
                                                                         ))
@@ -2223,6 +2232,19 @@ const styles = StyleSheet.create({
         overflow: 'hidden',
         borderWidth: 1,
         borderColor: Colors.border,
+    },
+    doorbellHistoryThumbRing: {
+        borderWidth: 2,
+        borderColor: Colors.primary,
+    },
+    doorbellHistoryThumbBadge: {
+        position: 'absolute',
+        top: 4,
+        right: 4,
+        backgroundColor: 'rgba(99,102,241,0.9)',
+        borderRadius: 8,
+        padding: 3,
+        zIndex: 2,
     },
     doorbellHistoryThumbImg: {
         width: '100%',

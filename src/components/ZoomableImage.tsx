@@ -69,6 +69,11 @@ export const ZoomableImage = ({ uri, style, resizeMode = 'contain' }: ZoomableIm
                 if (touches.length >= 2) {
                     const [a, b] = touches;
                     const dist = Math.hypot(a.pageX - b.pageX, a.pageY - b.pageY);
+                    // El segundo dedo suele unirse después del grant; inicializar
+                    // pinchStart aquí para que el pinch funcione siempre.
+                    if (!pinchStart.current) {
+                        pinchStart.current = { dist, scale: lastScale.current };
+                    }
                     if (pinchStart.current && pinchStart.current.dist > 0) {
                         const next = Math.min(
                             Math.max(pinchStart.current.scale * (dist / pinchStart.current.dist), MIN_SCALE),

@@ -6,7 +6,21 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import api from './api';
 
 const isExpoGo = Constants.executionEnvironment === ExecutionEnvironment.StoreClient;
-const PUSH_SKIP_KEY = 'push_notification_skip';
+const PUSH_TOKEN_KEY = '@TuQuotaAdmin:pushToken';
+
+export async function getStoredPushToken(): Promise<string | null> {
+  try {
+    return await AsyncStorage.getItem(PUSH_TOKEN_KEY);
+  } catch {
+    return null;
+  }
+}
+
+export async function clearStoredPushToken(): Promise<void> {
+  try {
+    await AsyncStorage.removeItem(PUSH_TOKEN_KEY);
+  } catch {}
+}
 
 const VAPID_PUBLIC_KEY = "BAB0CuKg20VHuCrfGBUG1ddz2DUnQZvJyg5vFnsMHvLRc-AjSPMWTagWviDOIONB_h0euBuqavie2ORx3oY5vEM";
 
@@ -50,11 +64,6 @@ export async function registerForPushNotificationsAsync(projectId?: string, user
 
   await ensureNotificationChannelsAsync();
 
-  const shouldSkip = await AsyncStorage.getItem(PUSH_SKIP_KEY);
-  if (shouldSkip === 'true') {
-    await AsyncStorage.removeItem(PUSH_SKIP_KEY);
-  }
-
   if (Platform.OS === 'web') {
     const isSupported = 'Notification' in window && 'serviceWorker' in navigator;
     if (!isSupported) {
@@ -76,6 +85,7 @@ export async function registerForPushNotificationsAsync(projectId?: string, user
       });
       const token = JSON.stringify(subscription);
       await api.patch('/users/push-token', { user_id: userId, push_token: token });
+      await AsyncStorage.setItem(PUSH_TOKEN_KEY, token);
       console.log('Real Web-Push subscription saved to backend');
       return token;
     } catch (error) {
@@ -115,13 +125,15 @@ export async function registerForPushNotificationsAsync(projectId?: string, user
     token = result.data;
     console.log('Push token:', token);
   } catch (error) {
-    console.log('[Push Token] Skipped (Firebase not configured). Push notifications will not work until google-services.json is added.');
-    await AsyncStorage.setItem(PUSH_SKIP_KEY, 'true');
+    // No marcar skip permanente: reintentar el registro en el próximo login
+    // por si el problema fue transitorio (ej. Firebase aún no configurado).
+    console.log('[Push Token] No se pudo obtener token Expo. Reintentará en la próxima apertura.');
     return null;
   }
 
   if (token) {
     try {
+      await AsyncStorage.setItem(PUSH_TOKEN_KEY, token);
       await api.patch('/users/push-token', { user_id: userId, push_token: token });
       console.log('Push token saved to backend');
     } catch (error) {
