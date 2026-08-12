@@ -140,6 +140,31 @@ const groupAccessByDay = (items: any[]) => {
     return groups.slice(0, 3);
 };
 
+const groupDoorbellByDay = (items: any[]) => {
+    const todayKey = toDayKey(new Date());
+    const yesterdayKey = toDayKey(new Date(Date.now() - DAY_MS));
+    const groups: { key: string; label: string; items: any[] }[] = [];
+    let currentKey: string | null = null;
+    let current: any[] = [];
+
+    for (const item of items) {
+        const key = toDayKey(new Date(item.createdAt));
+        if (key !== currentKey) {
+            if (currentKey) {
+                groups.push({ key: currentKey, label: dayLabel(currentKey, todayKey, yesterdayKey), items: current });
+            }
+            currentKey = key;
+            current = [];
+        }
+        current.push(item);
+    }
+    if (currentKey) {
+        groups.push({ key: currentKey, label: dayLabel(currentKey, todayKey, yesterdayKey), items: current });
+    }
+
+    return groups;
+};
+
 export const MyServicesScreen = ({ navigation, route }: any) => {
     const { token, user } = useAuth();
     const [loading, setLoading] = useState(false);
@@ -1581,8 +1606,8 @@ export const MyServicesScreen = ({ navigation, route }: any) => {
                                                                             Sin timbres registrados en los últimos 3 días.
                                                                         </Text>
                                                                     ) : (
-                                                                        doorbellHistory.map((group: any) => (
-                                                                            <View key={group.date} style={styles.doorbellHistoryGroup}>
+                                                                        groupDoorbellByDay(doorbellHistory).map((group: any) => (
+                                                                            <View key={group.key} style={styles.doorbellHistoryGroup}>
                                                                                 <Text style={styles.doorbellHistoryDay}>{group.label}</Text>
                                                                                 <View style={styles.doorbellHistoryGrid}>
                                                     {group.items.map((item: any) => (
@@ -1601,7 +1626,7 @@ export const MyServicesScreen = ({ navigation, route }: any) => {
                                                                     <Bell size={10} color="#fff" />
                                                                 </View>
                                                             )}
-                                                            <Text style={styles.doorbellHistoryTime}>{item.time}</Text>
+                                                            <Text style={styles.doorbellHistoryTime}>{formatSnapshotTime(item.createdAt)}</Text>
                                                         </TouchableOpacity>
                                                     ))}
                                                                                 </View>
