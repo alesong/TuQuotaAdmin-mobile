@@ -6,6 +6,7 @@ import {
     ScrollView,
     TouchableOpacity,
     ActivityIndicator,
+    AppState,
     TextInput,
     Platform,
     Image,
@@ -314,6 +315,40 @@ export const MyServicesScreen = ({ navigation, route }: any) => {
         }
     }, [token, API_URL]);
 
+    // Actualiza periódicamente la "última foto" del timbre que se muestra en la
+    // tarjeta, sin recargar toda la pantalla. Consulta el endpoint liviano
+    // last-snapshot (no re-descarga todo my-services).
+    const refreshDoorbellSnapshot = useCallback(async () => {
+        if (!token) return;
+        try {
+            const response = await fetch(`${API_URL}/resident-services/doorbell/last-snapshot`, {
+                cache: 'no-cache',
+                headers: { 'Authorization': `Bearer ${token}` },
+            });
+            if (!response.ok) return;
+            const data = await response.json();
+            if (!data || typeof data.imageUrl !== 'string') return;
+
+            setServices(prev => {
+                const current = prev.find(
+                    s =>
+                        s.provider === 'TuyaSmart' &&
+                        (!data.serviceId || s.serviceId === data.serviceId)
+                );
+                if (!current || current.lastSnapshot === data.imageUrl) return prev;
+                return prev.map(s =>
+                    s.serviceId === current.serviceId
+                        ? { ...s, lastSnapshot: data.imageUrl, lastSnapshotAt: data.createdAt }
+                        : s
+                );
+            });
+        } catch (error: any) {
+            console.warn('Error refreshing doorbell snapshot:', error);
+        }
+    }, [token, API_URL]);
+    const refreshDoorbellSnapshotRef = useRef<(() => Promise<void>) | null>(null);
+    refreshDoorbellSnapshotRef.current = refreshDoorbellSnapshot;
+
     // Cierra el preview del timbre con el botón atrás de Android (equivalente
     // al onRequestClose del Modal que se retiró del overlay).
     useEffect(() => {
@@ -433,6 +468,28 @@ export const MyServicesScreen = ({ navigation, route }: any) => {
             fetchMyServicesRef.current?.();
             fetchMisViviendasRef.current?.();
         }, [])
+    );
+
+    // Polling de la snapshot del timbre: solo mientras la pantalla está enfocada
+    // y la app en primer plano (ahorra batería/datos). Refresca la tarjeta cada
+    // 20 s vía el endpoint liviano last-snapshot.
+    useFocusEffect(
+        useCallback(() => {
+            if (!token || !doorbellServiceId) return;
+            const refresh = () => {
+                if (AppState.currentState !== 'active') return;
+                refreshDoorbellSnapshotRef.current?.();
+            };
+            refresh();
+            const id = setInterval(refresh, 20000);
+            const sub = AppState.addEventListener('change', next => {
+                if (next === 'active') refresh();
+            });
+            return () => {
+                clearInterval(id);
+                sub.remove();
+            };
+        }, [token, doorbellServiceId])
     );
 
     const parkingServices = services.filter(s => s.category === 'PARKING');
