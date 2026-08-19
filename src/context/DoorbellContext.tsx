@@ -7,8 +7,6 @@ import { useAuth } from './AuthContext';
 import * as Notifications from 'expo-notifications';
 import { playDoorbellSound } from '../utils/sounds';
 
-const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
-
 const PREFS_KEY = '@TuQuotaAdmin:doorbellPrefs';
 
 export interface DoorbellPreferences {
@@ -50,17 +48,17 @@ const DoorbellContext = createContext<DoorbellContextType>({
 async function applyChannelPreferences(prefs: DoorbellPreferences) {
   if (Platform.OS !== 'android') return;
   try {
-    await Notifications.deleteNotificationChannelAsync('doorbell_v2');
-    await delay(200);
-  } catch (e) {
-    console.warn('No se pudo eliminar el canal doorbell_v2 (puede no existir):', e);
-  }
-  try {
+    // Actualización in-place (upsert): NUNCA eliminar el canal. Si se borra o
+    // queda con importancia NONE, Android descarta el push en background y la
+    // notificación solo aparecería con la app abierta (vía JS).
     await Notifications.setNotificationChannelAsync('doorbell_v2', {
       name: 'Timbre',
-      importance: prefs.notify
-        ? Notifications.AndroidImportance.MAX
-        : Notifications.AndroidImportance.NONE,
+      importance:
+        prefs.notify && prefs.enabled
+          ? Notifications.AndroidImportance.MAX
+          : prefs.notify
+            ? Notifications.AndroidImportance.DEFAULT
+            : Notifications.AndroidImportance.NONE,
       vibrationPattern: [0, 500, 200, 500],
       lightColor: '#6366f1',
       sound: prefs.enabled && prefs.notify ? prefs.sound : null,

@@ -31,6 +31,11 @@ import {
     History,
     Clock,
     Bell,
+    BellRing,
+    X,
+    Check,
+    CheckCheck,
+    ChevronRight,
 } from 'lucide-react-native';
 import { ActionButton } from '../components/ActionButton';
 import { Colors } from '../constants/Colors';
@@ -217,6 +222,11 @@ export const MyServicesScreen = ({ navigation, route }: any) => {
     const [doorbellPreviewUrl, setDoorbellPreviewUrl] = useState<string | null>(null);
     const doorbellHistoryFetchedRef = useRef(false);
 
+    // Doorbell event detail (WhatsApp-style recipients/seen)
+    const [doorbellDetail, setDoorbellDetail] = useState<any | null>(null);
+    const [doorbellRecipients, setDoorbellRecipients] = useState<any[]>([]);
+    const [doorbellRecipientsLoading, setDoorbellRecipientsLoading] = useState(false);
+
     // Reservation states
     const [reservations, setReservations] = useState<Record<string, any[]>>({});
     const [reservationsLoading, setReservationsLoading] = useState<Record<string, boolean>>({});
@@ -314,6 +324,78 @@ export const MyServicesScreen = ({ navigation, route }: any) => {
             setDoorbellHistoryLoading(false);
         }
     }, [token, API_URL]);
+
+    // Abre el detalle de un evento/captura del timbre: marca "visto" del propio
+    // usuario (primera apertura) y lista quién fue notificado y quién lo vio.
+    const markDoorbellReceipt = useCallback(async (item: any) => {
+        if (!item || !item.entityType) return;
+        try {
+            await fetch(`${API_URL}/resident-services/doorbell/receipt`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`,
+                },
+                body: JSON.stringify({ type: item.entityType, id: item.id }),
+            });
+        } catch (error: any) {
+            console.warn('Error marcando receipt del timbre:', error);
+        }
+    }, [token, API_URL]);
+
+    const fetchDoorbellRecipients = useCallback(async (item: any) => {
+        if (!item || !item.entityType) return;
+        setDoorbellRecipientsLoading(true);
+        try {
+            const endpoint =
+                item.entityType === 'snapshot'
+                    ? `${API_URL}/resident-services/doorbell/snapshots/${item.id}/recipients`
+                    : `${API_URL}/resident-services/doorbell/events/${item.id}/recipients`;
+            const response = await fetch(endpoint, {
+                cache: 'no-cache',
+                headers: { 'Authorization': `Bearer ${token}` },
+            });
+            if (response.ok) {
+                const data = await response.json();
+                setDoorbellRecipients(Array.isArray(data.recipients) ? data.recipients : []);
+            } else {
+                setDoorbellRecipients([]);
+            }
+        } catch (error: any) {
+            console.warn('Error cargando receptores del timbre:', error);
+            setDoorbellRecipients([]);
+        } finally {
+            setDoorbellRecipientsLoading(false);
+        }
+    }, [token, API_URL]);
+
+    const openDoorbellDetail = useCallback(async (item: any) => {
+        if (!item) return;
+        setDoorbellDetail(item);
+        markDoorbellReceipt(item);
+        await fetchDoorbellRecipients(item);
+    }, [markDoorbellReceipt, fetchDoorbellRecipients]);
+
+    const closeDoorbellDetail = useCallback(() => {
+        setDoorbellDetail(null);
+        setDoorbellRecipients([]);
+    }, []);
+
+    // Abre el detalle cuando el usuario llega desde un deep-link (notificación
+    // del timbre) trayendo doorbellDetail en los parámetros de ruta.
+    const doorbellDetailParam = (route?.params as any)?.doorbellDetail;
+    useEffect(() => {
+        if (doorbellDetailParam?.id && doorbellDetailParam?.type) {
+            const item = {
+                id: doorbellDetailParam.id,
+                entityType: doorbellDetailParam.type,
+                type: 'ring',
+            };
+            openDoorbellDetail(item);
+            // Limpiar el parámetro para no reabrir en cada focus.
+            if (navigation?.setParams) navigation.setParams({ doorbellDetail: undefined });
+        }
+    }, [doorbellDetailParam?.id, doorbellDetailParam?.type]);
 
     // Actualiza periódicamente la "última foto" del timbre que se muestra en la
     // tarjeta, sin recargar toda la pantalla. Consulta el endpoint liviano
@@ -1614,8 +1696,10 @@ export const MyServicesScreen = ({ navigation, route }: any) => {
                                                         {s.description}
                                                     </Text>
 
-                                                    {s.provider === 'TuyaSmart' && (
+                                                    {(s.provider === 'TuyaSmart' || s.provider === 'Doorbell') && (
                                                         <>
+                                                            {s.provider === 'TuyaSmart' && (
+                                                            <>
                                                             {(() => {
                                                                 const snapshot = route?.params?.imageUrl || s.lastSnapshot;
                                                                 return snapshot ? (
@@ -1646,6 +1730,8 @@ export const MyServicesScreen = ({ navigation, route }: any) => {
                                                                     </View>
                                                                 );
                                                             })()}
+                                                            </>
+                                                            )}
 
                                                             <TouchableOpacity
                                                                 style={styles.doorbellHistoryToggle}
@@ -1678,12 +1764,13 @@ export const MyServicesScreen = ({ navigation, route }: any) => {
                                                                         groupDoorbellByDay(doorbellHistory).map((group: any) => (
                                                                             <View key={group.key} style={styles.doorbellHistoryGroup}>
                                                                                 <Text style={styles.doorbellHistoryDay}>{group.label}</Text>
+                                                                                {group.items.some((i: any) => i.imageUrl) && (
                                                                                 <View style={styles.doorbellHistoryGrid}>
-                                                    {group.items.map((item: any) => (
+                                                    {group.items.filter((i: any) => i.imageUrl).map((item: any) => (
                                                         <TouchableOpacity
                                                             key={item.id}
                                                             style={[styles.doorbellHistoryThumb, item.type === 'ring' && styles.doorbellHistoryThumbRing]}
-                                                            onPress={() => setDoorbellPreviewUrl(item.imageUrl)}
+                                                            onPress={() => openDoorbellDetail({ ...item, entityType: 'snapshot' })}
                                                         >
                                                             <Image
                                                                 source={{ uri: item.imageUrl }}
@@ -1696,9 +1783,50 @@ export const MyServicesScreen = ({ navigation, route }: any) => {
                                                                 </View>
                                                             )}
                                                             <Text style={styles.doorbellHistoryTime}>{formatSnapshotTime(item.createdAt)}</Text>
+                                                            {item.seenUsers > 0 && (
+                                                                <View style={styles.doorbellHistoryThumbSeen}>
+                                                                    <CheckCheck size={10} color="#fff" />
+                                                                </View>
+                                                            )}
                                                         </TouchableOpacity>
                                                     ))}
                                                                                 </View>
+                                                                                )}
+{group.items.filter((i: any) => !i.imageUrl).map((item: any) => (
+                                                    <TouchableOpacity
+                                                        key={item.id}
+                                                        style={styles.doorbellEventRow}
+                                                        onPress={() => openDoorbellDetail({ ...item, entityType: 'event' })}
+                                                        activeOpacity={0.6}
+                                                    >
+                                                        <View style={styles.doorbellEventBadge}>
+                                                            <Bell size={12} color="#fff" />
+                                                        </View>
+                                                        <View style={styles.doorbellEventInfo}>
+                                                            <View style={styles.doorbellEventTop}>
+                                                                <Text style={styles.doorbellEventType}>
+                                                                    {item.type === 'motion' ? 'Movimiento' : 'Timbre'}
+                                                                </Text>
+                                                                <Text style={styles.doorbellEventTime}>
+                                                                    {formatSnapshotTime(item.createdAt)}
+                                                                </Text>
+                                                            </View>
+                                                            {(item.title || item.body) ? (
+                                                                <Text style={styles.doorbellEventText}>
+                                                                    {item.title ? `${item.title}` : ''}
+                                                                    {item.title && item.body ? ' - ' : ''}
+                                                                    {item.body || ''}
+                                                                </Text>
+                                                            ) : null}
+                                                            <Text style={styles.doorbellEventMeta}>
+                                                                {item.notifiedTokens > 0 || item.notifiedUsers > 0
+                                                                    ? `${item.notifiedUsers || item.notifiedTokens} notificado(s) · ${item.seenUsers || 0} visto(s)`
+                                                                    : 'Sin dispositivos notificados'}
+                                                            </Text>
+                                                        </View>
+                                                        <ChevronRight size={16} color="#9ca3af" />
+                                                    </TouchableOpacity>
+                                                ))}
                                                                             </View>
                                                                         ))
                                                                     )}
@@ -1746,6 +1874,112 @@ export const MyServicesScreen = ({ navigation, route }: any) => {
                     </TouchableOpacity>
                     <ZoomableImage uri={doorbellPreviewUrl} style={styles.previewImage} />
                 </View>
+            )}
+
+            {doorbellDetail && (
+                <Modal
+                    transparent
+                    visible
+                    animationType="slide"
+                    onRequestClose={closeDoorbellDetail}
+                >
+                    <View style={styles.detailOverlay}>
+                        <View style={styles.detailSheet}>
+                            <View style={styles.detailHeader}>
+                                <View style={styles.detailHeaderText}>
+                                    <Text style={styles.detailTitle}>
+                                        {doorbellDetail.type === 'motion' ? 'Movimiento' : 'Timbre'}
+                                    </Text>
+                                    <Text style={styles.detailTime}>
+                                        {doorbellDetail.createdAt ? formatSnapshotTime(doorbellDetail.createdAt) : 'Detalle'}
+                                    </Text>
+                                </View>
+                                <TouchableOpacity onPress={closeDoorbellDetail} style={styles.detailCloseBtn}>
+                                    <X size={18} color={Colors.text} />
+                                </TouchableOpacity>
+                            </View>
+
+                            {doorbellDetail.imageUrl ? (
+                                <TouchableOpacity
+                                    activeOpacity={0.8}
+                                    onPress={() => {
+                                        setDoorbellDetail(null);
+                                        setDoorbellPreviewUrl(doorbellDetail.imageUrl);
+                                    }}
+                                >
+                                    <Image
+                                        source={{ uri: doorbellDetail.imageUrl }}
+                                        style={styles.detailImage}
+                                        resizeMode="cover"
+                                    />
+                                    <Text style={styles.detailZoomHint}>Toca la foto para ampliarla</Text>
+                                </TouchableOpacity>
+                            ) : null}
+
+                            {(doorbellDetail.title || doorbellDetail.body) ? (
+                                <Text style={styles.detailBody}>
+                                    {doorbellDetail.title ? `${doorbellDetail.title}` : ''}
+                                    {doorbellDetail.title && doorbellDetail.body ? ' - ' : ''}
+                                    {doorbellDetail.body || ''}
+                                </Text>
+                            ) : null}
+
+                            <Text style={styles.detailSubHeader}>Notificaciones</Text>
+
+                            {doorbellRecipientsLoading ? (
+                                <ActivityIndicator size="small" color={Colors.primary} style={{ marginVertical: 24 }} />
+                            ) : doorbellRecipients.length === 0 ? (
+                                <Text style={styles.detailEmpty}>
+                                    Nadie fue notificado de este timbre.
+                                </Text>
+                            ) : (
+                                doorbellRecipients.map((r: any) => (
+                                    <View key={r.userId} style={styles.recipientRow}>
+                                        <View style={styles.recipientAvatar}>
+                                            {r.photoUrl ? (
+                                                <Image source={{ uri: r.photoUrl }} style={styles.recipientAvatarImg} />
+                                            ) : (
+                                                <Text style={styles.recipientAvatarText}>
+                                                    {(r.name || '?').substring(0, 1).toUpperCase()}
+                                                </Text>
+                                            )}
+                                        </View>
+                                        <View style={styles.recipientInfo}>
+                                            <Text style={styles.recipientName}>{r.name}</Text>
+                                            <Text style={styles.recipientVivienda}>
+                                                {r.vivienda ? `Vivienda ${r.vivienda}` : ''}
+                                            </Text>
+                                        </View>
+                                        <View style={styles.recipientStatus}>
+                                            {r.seenAt ? (
+                                                <>
+                                                    <CheckCheck size={16} color="#2563EB" />
+                                                    <Text style={[styles.recipientStatusText, { color: '#2563EB' }]}>
+                                                        Visto {formatSnapshotTime(r.seenAt)}
+                                                    </Text>
+                                                </>
+                                            ) : r.notified ? (
+                                                <>
+                                                    <Check size={16} color="#9ca3af" />
+                                                    <Text style={[styles.recipientStatusText, { color: '#9ca3af' }]}>
+                                                        Notificado
+                                                    </Text>
+                                                </>
+                                            ) : (
+                                                <>
+                                                    <Bell size={14} color="#d1d5db" />
+                                                    <Text style={[styles.recipientStatusText, { color: '#d1d5db' }]}>
+                                                        Pendiente
+                                                    </Text>
+                                                </>
+                                            )}
+                                        </View>
+                                    </View>
+                                ))
+                            )}
+                        </View>
+                    </View>
+                </Modal>
             )}
 
             {pickerField && (
@@ -2343,6 +2577,53 @@ const styles = StyleSheet.create({
         textAlign: 'center',
         paddingVertical: 4,
     },
+    doorbellEventRow: {
+        flexDirection: 'row',
+        alignItems: 'flex-start',
+        gap: 10,
+        backgroundColor: Colors.card || '#fff',
+        borderWidth: 1,
+        borderColor: Colors.border || '#e2e8f0',
+        borderRadius: 10,
+        padding: 10,
+        marginBottom: 8,
+    },
+    doorbellEventBadge: {
+        width: 24,
+        height: 24,
+        borderRadius: 12,
+        backgroundColor: 'rgba(99,102,241,0.9)',
+        alignItems: 'center',
+        justifyContent: 'center',
+        marginTop: 1,
+    },
+    doorbellEventInfo: {
+        flex: 1,
+    },
+    doorbellEventTop: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+    },
+    doorbellEventType: {
+        fontSize: 13,
+        fontWeight: 'bold',
+        color: Colors.text || '#0f172a',
+    },
+    doorbellEventTime: {
+        fontSize: 11,
+        color: Colors.muted,
+    },
+    doorbellEventText: {
+        fontSize: 12,
+        color: Colors.text || '#334155',
+        marginTop: 2,
+    },
+    doorbellEventMeta: {
+        fontSize: 10,
+        color: Colors.muted,
+        marginTop: 3,
+    },
     previewOverlay: {
         position: 'absolute',
         top: 0,
@@ -2531,5 +2812,131 @@ const styles = StyleSheet.create({
         fontWeight: 'bold',
         textTransform: 'uppercase',
         letterSpacing: 0.3,
+    },
+    doorbellHistoryThumbSeen: {
+        position: 'absolute',
+        bottom: 4,
+        right: 4,
+        backgroundColor: 'rgba(37,99,235,0.9)',
+        borderRadius: 8,
+        padding: 3,
+        zIndex: 2,
+    },
+    detailOverlay: {
+        flex: 1,
+        backgroundColor: 'rgba(15,23,42,0.4)',
+        justifyContent: 'flex-end',
+    },
+    detailSheet: {
+        backgroundColor: '#fff',
+        borderTopLeftRadius: 20,
+        borderTopRightRadius: 20,
+        padding: 20,
+        paddingBottom: 40,
+        maxHeight: '85%',
+    },
+    detailHeader: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: 12,
+    },
+    detailHeaderText: {
+        flex: 1,
+    },
+    detailTitle: {
+        fontSize: 18,
+        fontWeight: 'bold',
+        color: Colors.text,
+    },
+    detailTime: {
+        fontSize: 12,
+        color: Colors.muted,
+        marginTop: 2,
+    },
+    detailCloseBtn: {
+        padding: 8,
+    },
+    detailImage: {
+        width: '100%',
+        height: 200,
+        borderRadius: 12,
+        borderWidth: 1,
+        borderColor: Colors.border,
+    },
+    detailZoomHint: {
+        fontSize: 11,
+        color: Colors.muted,
+        textAlign: 'center',
+        marginTop: 4,
+        marginBottom: 8,
+    },
+    detailBody: {
+        fontSize: 13,
+        color: Colors.text,
+        marginTop: 10,
+    },
+    detailSubHeader: {
+        fontSize: 13,
+        fontWeight: 'bold',
+        color: Colors.text,
+        textTransform: 'uppercase',
+        letterSpacing: 0.5,
+        marginTop: 18,
+        marginBottom: 10,
+    },
+    detailEmpty: {
+        fontSize: 12,
+        color: Colors.muted,
+        textAlign: 'center',
+        paddingVertical: 24,
+    },
+    recipientRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingVertical: 8,
+        borderBottomWidth: StyleSheet.hairlineWidth,
+        borderBottomColor: Colors.border,
+    },
+    recipientAvatar: {
+        width: 36,
+        height: 36,
+        borderRadius: 18,
+        backgroundColor: Colors.primary,
+        alignItems: 'center',
+        justifyContent: 'center',
+        marginRight: 10,
+        overflow: 'hidden',
+    },
+    recipientAvatarImg: {
+        width: 36,
+        height: 36,
+    },
+    recipientAvatarText: {
+        color: '#fff',
+        fontWeight: 'bold',
+        fontSize: 15,
+    },
+    recipientInfo: {
+        flex: 1,
+    },
+    recipientName: {
+        fontSize: 14,
+        fontWeight: '600',
+        color: Colors.text,
+    },
+    recipientVivienda: {
+        fontSize: 12,
+        color: Colors.muted,
+        marginTop: 1,
+    },
+    recipientStatus: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 5,
+    },
+    recipientStatusText: {
+        fontSize: 12,
+        fontWeight: '600',
     },
 });

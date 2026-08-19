@@ -34,7 +34,7 @@ registerAssets({
 setStorageProvider(AsyncStorage);
 
 function PushRegistration() {
-  const { user } = useAuth();
+  const { user, updateUser } = useAuth();
   const registered = useRef(false);
 
   useEffect(() => {
@@ -42,15 +42,25 @@ function PushRegistration() {
     registered.current = true;
 
     (async () => {
+      const serverToken = (user as any)?.push_token || null;
       const stored = await getStoredPushToken();
-      if (stored) {
+      // Revalidación por apertura: si hay un token local que coincide con el
+      // del servidor, no hace falta registrar de nuevo. Si difiere o falta,
+      // se regenera (cubre builds/instancias donde el token quedó obsoleto).
+      if (stored && (!serverToken || serverToken === stored)) {
         console.log('Push token ya registrado en este dispositivo');
         return;
       }
+      console.log('Push token local difiere del servidor; re-registrando...');
       for (let attempt = 1; attempt <= 5; attempt++) {
-        const token = await registerForPushNotificationsAsync(EAS_PROJECT_ID, user.id);
-        if (token) {
+        const newToken = await registerForPushNotificationsAsync(EAS_PROJECT_ID, user.id);
+        if (newToken) {
           console.log('Push token registered for user', user.id);
+          if (updateUser && typeof updateUser === 'function') {
+            try {
+              updateUser({ ...user, push_token: newToken } as any);
+            } catch {}
+          }
           return;
         }
         console.log(`Reintentando registro push (intento ${attempt}/5)...`);

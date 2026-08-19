@@ -54,6 +54,20 @@ export async function ensureNotificationChannelsAsync() {
   } catch {
     console.log('Could not create default notification channel');
   }
+  try {
+    // El canal del timbre debe existir SIEMPRE (se actualiza in-place en el
+    // DoorbellProvider según preferencias). Si no existe cuando llega el push
+    // con la app cerrada, Android descarta la notificación silenciosamente.
+    await Notifications.setNotificationChannelAsync('doorbell_v2', {
+      name: 'Timbre',
+      importance: Notifications.AndroidImportance.MAX,
+      vibrationPattern: [0, 500, 200, 500],
+      lightColor: '#6366f1',
+      sound: 'doorbell.wav',
+    });
+  } catch {
+    console.log('Could not create doorbell channel');
+  }
 }
 
 export async function registerForPushNotificationsAsync(projectId?: string, userId?: string) {
