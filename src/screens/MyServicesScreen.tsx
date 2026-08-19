@@ -184,6 +184,23 @@ export const MyServicesScreen = ({ navigation, route }: any) => {
         }
     }, [route?.params?.initialSection]);
 
+    // Al llegar desde una notificación/deep-link del timbre (fromDoorbell) con
+    // servicio de cámaras activo, el destino ideal es la pestaña Cámaras; si no
+    // hay cámaras, se queda en la pestaña donde está la tarjeta del timbre.
+    const fromDoorbellRef = useRef(false);
+    const camerasAppliedRef = useRef(false);
+    useEffect(() => {
+        if ((route?.params as any)?.fromDoorbell || (route?.params as any)?.doorbellDetail) {
+            fromDoorbellRef.current = true;
+        }
+        if (!fromDoorbellRef.current || camerasAppliedRef.current) return;
+        if (services.length === 0) return;
+        if (services.some((s: any) => s.category === 'CAMERAS')) {
+            camerasAppliedRef.current = true;
+            setActiveSection('cameras');
+        }
+    }, [services, route?.params]);
+
     // Action/API states
     const [actionLoading, setActionLoading] = useState(false);
     const [gateLoading, setGateLoading] = useState<string | null>(null);
@@ -1924,59 +1941,65 @@ export const MyServicesScreen = ({ navigation, route }: any) => {
                                 </Text>
                             ) : null}
 
-                            <Text style={styles.detailSubHeader}>Notificaciones</Text>
+                            <ScrollView
+                                style={{ maxHeight: 260 }}
+                                showsVerticalScrollIndicator
+                                contentContainerStyle={{ paddingBottom: 4 }}
+                            >
+                                <Text style={styles.detailSubHeader}>Notificaciones</Text>
 
-                            {doorbellRecipientsLoading ? (
-                                <ActivityIndicator size="small" color={Colors.primary} style={{ marginVertical: 24 }} />
-                            ) : doorbellRecipients.length === 0 ? (
-                                <Text style={styles.detailEmpty}>
-                                    Nadie fue notificado de este timbre.
-                                </Text>
-                            ) : (
-                                doorbellRecipients.map((r: any) => (
-                                    <View key={r.userId} style={styles.recipientRow}>
-                                        <View style={styles.recipientAvatar}>
-                                            {r.photoUrl ? (
-                                                <Image source={{ uri: r.photoUrl }} style={styles.recipientAvatarImg} />
-                                            ) : (
-                                                <Text style={styles.recipientAvatarText}>
-                                                    {(r.name || '?').substring(0, 1).toUpperCase()}
+                                {doorbellRecipientsLoading ? (
+                                    <ActivityIndicator size="small" color={Colors.primary} style={{ marginVertical: 24 }} />
+                                ) : doorbellRecipients.length === 0 ? (
+                                    <Text style={styles.detailEmpty}>
+                                        Nadie fue notificado de este timbre.
+                                    </Text>
+                                ) : (
+                                    doorbellRecipients.map((r: any) => (
+                                        <View key={r.userId} style={styles.recipientRow}>
+                                            <View style={styles.recipientAvatar}>
+                                                {r.photoUrl ? (
+                                                    <Image source={{ uri: r.photoUrl }} style={styles.recipientAvatarImg} />
+                                                ) : (
+                                                    <Text style={styles.recipientAvatarText}>
+                                                        {(r.name || '?').substring(0, 1).toUpperCase()}
+                                                    </Text>
+                                                )}
+                                            </View>
+                                            <View style={styles.recipientInfo}>
+                                                <Text style={styles.recipientName}>{r.name}</Text>
+                                                <Text style={styles.recipientVivienda}>
+                                                    {r.vivienda ? `Vivienda ${r.vivienda}` : ''}
                                                 </Text>
-                                            )}
+                                            </View>
+                                            <View style={styles.recipientStatus}>
+                                                {r.seenAt ? (
+                                                    <>
+                                                        <CheckCheck size={16} color="#2563EB" />
+                                                        <Text style={[styles.recipientStatusText, { color: '#2563EB' }]}>
+                                                            Visto {formatSnapshotTime(r.seenAt)}
+                                                        </Text>
+                                                    </>
+                                                ) : r.notified ? (
+                                                    <>
+                                                        <Check size={16} color="#9ca3af" />
+                                                        <Text style={[styles.recipientStatusText, { color: '#9ca3af' }]}>
+                                                            Notificado
+                                                        </Text>
+                                                    </>
+                                                ) : (
+                                                    <>
+                                                        <Bell size={14} color="#d1d5db" />
+                                                        <Text style={[styles.recipientStatusText, { color: '#d1d5db' }]}>
+                                                            Pendiente
+                                                        </Text>
+                                                    </>
+                                                )}
+                                            </View>
                                         </View>
-                                        <View style={styles.recipientInfo}>
-                                            <Text style={styles.recipientName}>{r.name}</Text>
-                                            <Text style={styles.recipientVivienda}>
-                                                {r.vivienda ? `Vivienda ${r.vivienda}` : ''}
-                                            </Text>
-                                        </View>
-                                        <View style={styles.recipientStatus}>
-                                            {r.seenAt ? (
-                                                <>
-                                                    <CheckCheck size={16} color="#2563EB" />
-                                                    <Text style={[styles.recipientStatusText, { color: '#2563EB' }]}>
-                                                        Visto {formatSnapshotTime(r.seenAt)}
-                                                    </Text>
-                                                </>
-                                            ) : r.notified ? (
-                                                <>
-                                                    <Check size={16} color="#9ca3af" />
-                                                    <Text style={[styles.recipientStatusText, { color: '#9ca3af' }]}>
-                                                        Notificado
-                                                    </Text>
-                                                </>
-                                            ) : (
-                                                <>
-                                                    <Bell size={14} color="#d1d5db" />
-                                                    <Text style={[styles.recipientStatusText, { color: '#d1d5db' }]}>
-                                                        Pendiente
-                                                    </Text>
-                                                </>
-                                            )}
-                                        </View>
-                                    </View>
-                                ))
-                            )}
+                                    ))
+                                )}
+                            </ScrollView>
                         </View>
                     </View>
                 </Modal>

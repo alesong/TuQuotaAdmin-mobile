@@ -28,6 +28,9 @@ export const DebugPushTokenScreen = ({ navigation }: any) => {
   const [refreshing, setRefreshing] = useState(false);
   const [refreshError, setRefreshError] = useState<string | null>(null);
   const [deviceError, setDeviceError] = useState<string | null>(null);
+  const [testSending, setTestSending] = useState(false);
+  const [testResult, setTestResult] = useState<string | null>(null);
+  const [testError, setTestError] = useState<string | null>(null);
 
   useEffect(() => {
     fetchDeviceToken();
@@ -97,6 +100,33 @@ export const DebugPushTokenScreen = ({ navigation }: any) => {
       setRefreshing(false);
     }
     fetchDeviceToken();
+  };
+
+  const handleTestPush = async () => {
+    setTestSending(true);
+    setTestResult(null);
+    setTestError(null);
+    try {
+      const res = await fetch(`${Config.API_URL}/users/test-push`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${authToken}` },
+      });
+      const data = await res.json().catch(() => null);
+      if (res.ok && data?.success) {
+        const { sent, webPush, total, skipped } = data?.result || {};
+        setTestResult(
+          `Push enviado a ${total ?? 0} token(s) (expo: ${sent ?? 0}, web: ${webPush ?? 0}, omitidos: ${skipped ?? 0}). Revisa la barra de notificaciones con la app cerrada o en segundo plano.`
+        );
+      } else {
+        setTestError(data?.reason === 'no_push_tokens'
+          ? 'No hay tokens de push registrados para tu usuario.'
+          : `El servidor respondió ${res.status}.`);
+      }
+    } catch (err: any) {
+      setTestError(`Error de conexión: ${err?.message || err}`);
+    } finally {
+      setTestSending(false);
+    }
   };
 
   return (
@@ -230,6 +260,39 @@ export const DebugPushTokenScreen = ({ navigation }: any) => {
                   <Text style={styles.errorText}>{refreshError}</Text>
                 )}
               </View>
+            )}
+          </View>
+
+          {/* Test Push Card */}
+          <View style={styles.card}>
+            <View style={styles.cardHeader}>
+              <Cloud size={20} color={Colors.primary} />
+              <Text style={styles.cardTitle}>Push de Prueba</Text>
+            </View>
+            <Text style={styles.cardDescription}>
+              Envía una notificación de prueba desde el servidor a todos tus
+              dispositivos registrados ({`/users/test-push`}). Verifica la entrega
+              con la app abierta, en segundo plano y con la app cerrada.
+            </Text>
+            <TouchableOpacity
+              style={styles.copyButton}
+              onPress={handleTestPush}
+              disabled={testSending}
+            >
+              {testSending ? (
+                <ActivityIndicator size="small" color="#fff" />
+              ) : (
+                <Cloud size={18} color="#fff" />
+              )}
+              <Text style={styles.copyButtonText}>
+                {testSending ? 'Enviando...' : 'Enviar Push de Prueba'}
+              </Text>
+            </TouchableOpacity>
+            {testError && (
+              <Text style={styles.errorText}>{testError}</Text>
+            )}
+            {testResult && (
+              <Text style={styles.successText}>{testResult}</Text>
             )}
           </View>
 
@@ -407,6 +470,12 @@ const styles = StyleSheet.create({
   errorText: {
     fontSize: 13,
     color: '#ef4444',
+    textAlign: 'center',
+    marginTop: 8,
+  },
+  successText: {
+    fontSize: 13,
+    color: Colors.success,
     textAlign: 'center',
     marginTop: 8,
   },
