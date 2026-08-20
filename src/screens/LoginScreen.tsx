@@ -100,13 +100,23 @@ export const LoginScreen = ({ navigation }: any) => {
     }, [GOOGLE_CLIENT_ID]);
 
     const handleNativeGoogleSignIn = async () => {
+        let step = 'GoogleSignin.hasPlayServices';
         try {
+            if (!GOOGLE_CLIENT_ID) {
+                throw new Error('GOOGLE_CLIENT_ID no está en el binario (Constants.expoConfig.extra). Rebuild del EAS build requerido.');
+            }
+            await GoogleSignin.configure({ webClientId: GOOGLE_CLIENT_ID });
+
+            step = 'GoogleSignin.hasPlayServices';
             await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
+
+            step = 'GoogleSignin.signIn';
             const response = await GoogleSignin.signIn();
 
             if (response.type === 'success') {
                 const { idToken } = response.data;
                 if (!idToken) {
+                    step = 'idToken ausente';
                     showAlert({
                         title: 'Error de Acceso',
                         message: 'No se pudo obtener el token de Google.',
@@ -115,15 +125,18 @@ export const LoginScreen = ({ navigation }: any) => {
                     return;
                 }
                 setLoading(true);
+
+                step = 'POST /auth/google';
                 const res = await api.post('/auth/google', { token: idToken });
                 const data = await res.json();
 
                 if (res.ok) {
                     await signIn(data.user, data.accessToken);
                 } else {
+                    console.error('[GoogleSignIn] backend error:', res.status, data);
                     showAlert({
                         title: 'Error de Acceso',
-                        message: data?.message || 'No pudimos iniciar sesión con Google.',
+                        message: `${data?.message || 'No pudimos iniciar sesión con Google.'} (HTTP ${res.status})`,
                         type: 'error'
                     });
                 }
@@ -132,10 +145,13 @@ export const LoginScreen = ({ navigation }: any) => {
             if (error.code === statusCodes.SIGN_IN_CANCELLED) {
                 return;
             }
-            console.error('Google Sign-In native error:', error);
+            const detail = error?.message
+                ? `${error.code ? `[${error.code}] ` : ''}${error.message}`
+                : JSON.stringify(error);
+            console.error(`[GoogleSignIn] FAIL en ${step}:`, error);
             showAlert({
                 title: 'Fallo al conectar',
-                message: 'No logramos completar el inicio de sesión con Google. Intenta de nuevo más tarde.',
+                message: `No logramos completar el inicio de sesión con Google (${step}).\n\nDetalle: ${detail}`,
                 type: 'error'
             });
         } finally {
