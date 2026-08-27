@@ -125,7 +125,7 @@ export const ActionButton = ({
         <IconComponent size={iconSize} color={txtColor} style={{ marginRight: labelText ? 6 : 0 }} />
       ) : null}
       {labelText ? (
-        <Text style={{ color: txtColor, fontSize: fSize, fontWeight: fWeight as any, textAlign: 'center' }}>
+        <Text style={{ color: txtColor, fontSize: fSize, fontWeight: fWeight as any, textAlign: 'center', marginBottom: -3, marginTop: -8 }}>
           {labelText}
         </Text>
       ) : null}
