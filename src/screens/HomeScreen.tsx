@@ -1050,11 +1050,16 @@ export const HomeScreen = ({ navigation }: any) => {
                                                                     <View style={styles.detailMain}>
                                                                         <Text style={styles.detailMonth}>{months[item.mes - 1]}</Text>
                                                                         <Text style={styles.detailType}>
-                                                                            {item.estado === 'PAGADA' 
-                                                                                ? `Pagado ${item.fechaPago ? `(${new Date(item.fechaPago).toLocaleDateString('es-CO')})` : ''}` 
-                                                                                : item.estado === 'PARCIAL' ? 'Abono Parcial' 
-                                                                                : item.estado === 'PENDIENTE_CONFIRMACION' ? 'Pendiente por Confirmar'
-                                                                                : 'Sin Pago'}
+                                                                            {item.descripcion 
+                                                                                ? item.descripcion
+                                                                                : item.tipo === 'COBRO_ADICIONAL' ? 'Cobro Adicional'
+                                                                                : item.tipo === 'COMPENSACION' ? 'Compensación'
+                                                                                : item.tipo === 'EXTRAORDINARIA' ? 'Cuota Extraordinaria'
+                                                                                : item.estado === 'PAGADA' 
+                                                                                    ? `Pagado ${item.fechaPago ? `(${new Date(item.fechaPago).toLocaleDateString('es-CO')})` : ''}` 
+                                                                                    : item.estado === 'PARCIAL' ? 'Abono Parcial' 
+                                                                                    : item.estado === 'PENDIENTE_CONFIRMACION' ? 'Pendiente por Confirmar'
+                                                                                    : 'Cuota de Administración'}
                                                                         </Text>
                                                                     </View>
                                                                     <View style={styles.detailSide}>
