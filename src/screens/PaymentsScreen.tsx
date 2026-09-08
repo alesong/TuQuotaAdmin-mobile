@@ -8,7 +8,7 @@ import { useAuth } from '../context/AuthContext';
 import { useAlert } from '../context/AlertContext';
 import { Config } from '../constants/Config';
 import imageCompression from 'browser-image-compression';
-// Removed expo-image-picker import as we're using standard web inputs for compatibility
+import * as ImagePicker from 'expo-image-picker';
 
 
 export const PaymentsScreen = ({ navigation, route }: any) => {
@@ -23,6 +23,35 @@ export const PaymentsScreen = ({ navigation, route }: any) => {
     const [payAmount, setPayAmount] = React.useState<number>(Number(monto) || 0);
     const [advanceModalVisible, setAdvanceModalVisible] = React.useState<boolean>(Number(monto) === 0);
     const [advanceMonths, setAdvanceMonths] = React.useState<number>(Number(monto) === 0 ? 1 : 0);
+
+    const reportBreBProblem = async (errorMsg: string) => {
+        try {
+            const subject = 'Problema con pago Bre-B desde app móvil';
+            const message = [
+                `Usuario: ${user?.name || 'N/A'} (${user?.email || 'N/A'})`,
+                `Vivienda: ${resolvedViviendaId || 'N/A'}`,
+                `Condominio: ${condo?.id || 'N/A'}`,
+                `Error: ${errorMsg}`,
+                `Plataforma: ${Platform.OS}`,
+                `Fecha: ${new Date().toLocaleString('es-CO')}`,
+            ].join('\n');
+
+            await fetch(`${Config.API_URL}/support/contact`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`,
+                },
+                body: JSON.stringify({
+                    subject,
+                    message,
+                    recipientType: 'SUPPORT',
+                }),
+            });
+        } catch (_) {
+            // Silently fail - the report is best-effort
+        }
+    };
 
     const condo = React.useMemo(() => {
         const associations: any[] = user?.viviendas || [];
@@ -167,31 +196,71 @@ export const PaymentsScreen = ({ navigation, route }: any) => {
     };
 
     const pickBrebReceipt = async () => {
-        if (Platform.OS !== 'web') {
-            showAlert({ title: 'Error', message: 'La selección de archivos solo está disponible en la versión web.', type: 'error' });
+        if (Platform.OS === 'web') {
+            const input = document.createElement('input');
+            input.type = 'file';
+            input.accept = 'image/*,application/pdf';
+            input.onchange = (e: any) => {
+                const file = e.target.files[0];
+                if (file) {
+                    setBrebReceiptFile(file);
+                    const reader = new FileReader();
+                    reader.onload = (re) => {
+                        setBrebReceiptUri(re.target?.result as string);
+                    };
+                    reader.readAsDataURL(file);
+                }
+            };
+            input.click();
             return;
         }
 
-        const input = document.createElement('input');
-        input.type = 'file';
-        input.accept = 'image/*,application/pdf';
-        input.onchange = (e: any) => {
-            const file = e.target.files[0];
-            if (file) {
-                setBrebReceiptFile(file);
-                const reader = new FileReader();
-                reader.onload = (re) => {
-                    setBrebReceiptUri(re.target?.result as string);
-                };
-                reader.readAsDataURL(file);
+        try {
+            const result = await ImagePicker.launchImageLibraryAsync({
+                mediaTypes: ['images'],
+                allowsEditing: false,
+                quality: 1,
+            });
+
+            if (!(result as any).canceled) {
+                const asset = (result as any).assets[0];
+                const fileName = asset.uri.split('/').pop() || 'comprobante.jpg';
+                const fileType = asset.mimeType || 'image/jpeg';
+                setBrebReceiptFile({ uri: asset.uri, name: fileName, type: fileType });
+                setBrebReceiptUri(asset.uri);
             }
-        };
-        input.click();
+        } catch (e: any) {
+            showAlert({
+                title: 'Error',
+                message: 'No se pudo abrir el selector de archivos. Por favor intenta de nuevo.\n\nPuedes intentar desde la versión web como alternativa.',
+                type: 'error',
+                buttons: [
+                    { text: 'Cerrar', style: 'cancel' },
+                    { text: 'Reportar problema', onPress: async () => {
+                        await reportBreBProblem(e?.message || 'Error al seleccionar comprobante');
+                        showAlert({ title: 'Reporte enviado', message: 'Hemos recibido tu reporte. El equipo de soporte lo revisará pronto.', type: 'success' });
+                    }},
+                    { text: 'Abrir en web', style: 'link', onPress: () => Linking.openURL('https://pro.tuquotaadmin.com') },
+                ],
+            });
+        }
     };
 
     const handleSubmitBreb = async () => {
         if (!condo?.id) {
-            showAlert({ title: 'Aviso', message: 'No encontramos el condominio para enviar tu comprobante.', type: 'warning' });
+            showAlert({
+                title: 'Aviso',
+                message: 'No encontramos el condominio para enviar tu comprobante.\n\nPuedes intentar desde la versión web como alternativa.',
+                type: 'warning',
+                buttons: [
+                    { text: 'Cerrar', style: 'cancel' },
+                    { text: 'Reportar problema', onPress: async () => {
+                        await reportBreBProblem('Condominio no encontrado al enviar comprobante Bre-B');
+                        showAlert({ title: 'Reporte enviado', message: 'Hemos recibido tu reporte. El equipo de soporte lo revisará pronto.', type: 'success' });
+                    }},
+                    { text: 'Abrir en web', style: 'link', onPress: () => Linking.openURL('https://pro.tuquotaadmin.com') },
+                ],
+            });
             return;
         }
         if (!brebReceiptFile) {
@@ -202,9 +271,9 @@ export const PaymentsScreen = ({ navigation, route }: any) => {
         setBrebSubmitting(true);
         try {
             let fileToUpload = brebReceiptFile;
-            
-            // 1. Compression (only for images) - 1MB limit as per repo standard
-            if (brebReceiptFile.type.startsWith('image/')) {
+
+            // Compression only on web (browser-image-compression depends on Canvas/Web Workers)
+            if (Platform.OS === 'web' && brebReceiptFile?.type?.startsWith('image/')) {
                 const options = {
                     maxSizeMB: 1,
                     maxWidthOrHeight: 1200,
@@ -223,7 +292,18 @@ export const PaymentsScreen = ({ navigation, route }: any) => {
             formData.append('viviendaId', resolvedViviendaId || '');
             formData.append('monto', payAmount.toString());
             formData.append('cuotaIds', (cuotaIds || []).join(','));
-            formData.append('receipt', fileToUpload);
+
+            // Append receipt file per platform (same pattern as ProfileScreen)
+            if (fileToUpload instanceof Blob) {
+                const receiptBlob = fileToUpload instanceof File
+                    ? await fileToUpload.blob()
+                    : fileToUpload;
+                formData.append('receipt', receiptBlob, fileToUpload.name || 'comprobante.jpg');
+            } else if (fileToUpload?.uri) {
+                formData.append('receipt', fileToUpload as any);
+            } else {
+                formData.append('receipt', fileToUpload);
+            }
 
             const submitResp = await fetch(`${Config.API_URL}/payments/submit-breb`, {
                 method: 'POST',
@@ -252,7 +332,19 @@ export const PaymentsScreen = ({ navigation, route }: any) => {
             }, 500);
             
         } catch (e: any) {
-            showAlert({ title: 'Error', message: e?.message || 'No se pudo completar el proceso.', type: 'error' });
+            showAlert({
+                title: 'Error',
+                message: `${e?.message || 'No se pudo completar el proceso.'}\n\nPuedes intentar desde la versión web como alternativa.`,
+                type: 'error',
+                buttons: [
+                    { text: 'Cerrar', style: 'cancel' },
+                    { text: 'Reportar problema', onPress: async () => {
+                        await reportBreBProblem(e?.message || 'Error desconocido al enviar comprobante');
+                        showAlert({ title: 'Reporte enviado', message: 'Hemos recibido tu reporte. El equipo de soporte lo revisará pronto.', type: 'success' });
+                    }},
+                    { text: 'Abrir en web', style: 'link', onPress: () => Linking.openURL('https://pro.tuquotaadmin.com') },
+                ],
+            });
         } finally {
             setBrebSubmitting(false);
         }

@@ -56,6 +56,12 @@
         }
       ],
       "expo-video",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Permitir acceder a tus fotos para adjuntar comprobantes de pago"
+        }
+      ],
       "@react-native-community/datetimepicker"
     ],
     "extra": {
