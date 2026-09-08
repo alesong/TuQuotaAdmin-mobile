@@ -293,14 +293,16 @@ export const PaymentsScreen = ({ navigation, route }: any) => {
             formData.append('monto', payAmount.toString());
             formData.append('cuotaIds', (cuotaIds || []).join(','));
 
-            // Append receipt file per platform (same pattern as ProfileScreen)
+            // Always convert to Blob before appending (React Native FormData doesn't serialize {uri,name,type} objects)
             if (fileToUpload instanceof Blob) {
                 const receiptBlob = fileToUpload instanceof File
                     ? await fileToUpload.blob()
                     : fileToUpload;
                 formData.append('receipt', receiptBlob, fileToUpload.name || 'comprobante.jpg');
             } else if (fileToUpload?.uri) {
-                formData.append('receipt', fileToUpload as any);
+                const blobResponse = await fetch(fileToUpload.uri);
+                const receiptBlob = await blobResponse.blob();
+                formData.append('receipt', receiptBlob, fileToUpload.name || 'comprobante.jpg');
             } else {
                 formData.append('receipt', fileToUpload);
             }
