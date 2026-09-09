@@ -13,6 +13,7 @@ import { AuthProvider, useAuth, AlertProvider, initializeConfig, registerAssets,
 import NotificationDeepLinkHandler from './src/components/NotificationDeepLinkHandler';
 import { navigationRef } from './src/navigation/RootNavigation';
 import { AppNavigator } from './src/navigation/AppNavigator';
+import { useVersionCheck } from './src/hooks/useVersionCheck';
 
 console.log("Iniciando App.tsx");
 
@@ -94,6 +95,7 @@ function PushRegistration() {
 
 export default function App() {
   console.log("Rendering App");
+  useVersionCheck();
 
   useEffect(() => {
     setupNotificationHandler();

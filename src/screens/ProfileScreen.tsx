@@ -350,7 +350,7 @@ export const ProfileScreen = ({ navigation }: any) => {
                     />
                 </View>
 
-                <Text style={styles.version}>Versión 1.0.0</Text>
+                <Text style={styles.version}>Versión 2.0.0</Text>
             </ScrollView>
 
             {/* Modal de Recorte (solo Web) */}

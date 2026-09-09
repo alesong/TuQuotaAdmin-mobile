@@ -2,7 +2,7 @@
   "expo": {
     "name": "TuQuotaAdmin",
     "slug": "tuquotaadmin-mobile",
-    "version": "1.0.0",
+    "version": "2.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -78,7 +78,10 @@
       "policy": "appVersion"
     },
     "updates": {
-      "url": "https://u.expo.dev/f0d5303a-8cc9-4d2a-ae51-7a7ebf190995"
+      "url": "https://u.expo.dev/f0d5303a-8cc9-4d2a-ae51-7a7ebf190995",
+      "requestHeaders": {
+        "expo-channel-name": "production"
+      }
     }
   }
 }
