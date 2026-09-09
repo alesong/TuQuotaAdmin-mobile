@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, Switch, Modal, FlatList, ActivityIndicator, Platform } from 'react-native';
-import { ChevronLeft, Plus, Trash2, Users, Home, Info, Building2, Store, Layout, LandPlot } from 'lucide-react-native';
+import { ChevronLeft, Plus, Trash2, Users, Home, Info, Building2, Store, Layout, LandPlot, UserCheck, Unlink } from 'lucide-react-native';
 import { Colors } from '../constants/Colors';
 import { Config } from '../constants/Config';
 import { useAuth } from '../context/AuthContext';
@@ -13,6 +13,7 @@ import api from '../lib/api';
 
 export const DwellingDetailsScreen = ({ navigation, route }: any) => {
     const { showAlert } = useAlert();
+    const { user } = useAuth();
     const { vivienda, condominioId } = route.params;
 
     const [loading, setLoading] = useState(false);
@@ -22,6 +23,7 @@ export const DwellingDetailsScreen = ({ navigation, route }: any) => {
     const [estaVacia, setEstaVacia] = useState(vivienda.esta_vacia || false);
     const [residents, setResidents] = useState<any[]>([]);
     const [fetchingResidents, setFetchingResidents] = useState(false);
+    const [propietarios, setPropietarios] = useState<any[]>(vivienda.propietarios || []);
 
     // Modal state for adding resident
     const [isModalVisible, setIsModalVisible] = useState(false);
@@ -34,7 +36,23 @@ export const DwellingDetailsScreen = ({ navigation, route }: any) => {
 
     useEffect(() => {
         fetchResidents();
+        fetchPropietarios();
     }, []);
+
+    const fetchPropietarios = async () => {
+        try {
+            const response = await api.get(`/condominios/${condominioId}/viviendas`);
+            if (response.ok) {
+                const viviendas = await response.json();
+                const actual = viviendas.find((v: any) => v.id === vivienda.id);
+                if (actual?.propietarios) {
+                    setPropietarios(actual.propietarios);
+                }
+            }
+        } catch (error) {
+            console.error('Error fetching propietarios:', error);
+        }
+    };
 
     const fetchResidents = async () => {
         setFetchingResidents(true);
@@ -121,6 +139,58 @@ export const DwellingDetailsScreen = ({ navigation, route }: any) => {
                     text: 'Eliminar',
                     style: 'destructive',
                     onPress: performDelete
+                }
+            ]
+        });
+    };
+
+    const isPrimaryOwner = propietarios.some(
+        (p) => p.user?.id === user?.id && p.es_principal === true
+    );
+
+    const handleDisassociateUser = (targetUserId: string, targetName: string) => {
+        const performDisassociate = async () => {
+            try {
+                const response = await api.post(
+                    `/condominios/${condominioId}/viviendas/${vivienda.id}/disassociate/${targetUserId}`,
+                    {}
+                );
+
+                if (response.ok) {
+                    setPropietarios((prev) => prev.filter((p) => p.user?.id !== targetUserId));
+                    showAlert({
+                        title: 'Éxito',
+                        message: `${targetName} ha sido desvinculado de esta vivienda.`,
+                        type: 'success'
+                    });
+                } else {
+                    const error = await response.json().catch(() => ({}));
+                    showAlert({
+                        title: 'Error',
+                        message: error.message || 'No se pudo desvincular al usuario.',
+                        type: 'error'
+                    });
+                }
+            } catch (error) {
+                console.error('Error disassociating user:', error);
+                showAlert({
+                    title: 'Error',
+                    message: 'Ocurrió un error al procesar la solicitud.',
+                    type: 'error'
+                });
+            }
+        };
+
+        showAlert({
+            title: 'Desvincular usuario',
+            message: `¿Estás seguro de desvincular a ${targetName} de esta vivienda?\n\nConsecuencias:\n• Perderá el acceso a esta vivienda en la app.\n• No verá más los pagos, cuotas ni movimientos de esta unidad.\n• Podrá ser vinculado nuevamente por el administrador.\n\nEsta acción no se puede deshacer.`,
+            type: 'warning',
+            buttons: [
+                { text: 'Cancelar', style: 'cancel' },
+                {
+                    text: 'Desvincular',
+                    style: 'destructive',
+                    onPress: performDisassociate
                 }
             ]
         });
@@ -219,6 +289,45 @@ export const DwellingDetailsScreen = ({ navigation, route }: any) => {
                         />
                     </View>
                     {saving && <Text style={styles.savingTag}>Guardando...</Text>}
+                </View>
+
+                <View style={styles.section}>
+                    <Text style={styles.sectionTitle}>Propietarios Vinculados</Text>
+                    {propietarios.length === 0 ? (
+                        <View style={styles.emptyContainer}>
+                            <UserCheck size={40} color={Colors.muted} />
+                            <Text style={styles.emptyText}>No hay propietarios vinculados.</Text>
+                        </View>
+                    ) : (
+                        propietarios.map((item) => {
+                            const isMe = item.user?.id === user?.id;
+                            const canDisassociate = isPrimaryOwner && !isMe;
+                            return (
+                                <View key={item.id} style={styles.residentCard}>
+                                    <View style={styles.residentInfo}>
+                                        <Text style={styles.residentName}>{item.user?.name}</Text>
+                                        <View style={styles.residentDetailsRow}>
+                                            <Text style={styles.residentSubtitle}>{item.user?.email}</Text>
+                                            {item.es_principal && (
+                                                <Text style={styles.badge}> • Principal</Text>
+                                            )}
+                                            {isMe && (
+                                                <Text style={styles.badge}> • Tú</Text>
+                                            )}
+                                        </View>
+                                    </View>
+                                    {canDisassociate && (
+                                        <TouchableOpacity
+                                            onPress={() => handleDisassociateUser(item.user?.id, item.user?.name)}
+                                            style={styles.deleteButton}
+                                        >
+                                            <Unlink size={20} color={Colors.error} />
+                                        </TouchableOpacity>
+                                    )}
+                                </View>
+                            );
+                        })
+                    )}
                 </View>
 
                 <View style={styles.section}>
@@ -440,6 +549,11 @@ const styles = StyleSheet.create({
     residentSubtitle: {
         fontSize: 14,
         color: Colors.muted,
+    },
+    badge: {
+        fontSize: 12,
+        color: Colors.primary,
+        fontWeight: '600',
     },
     deleteButton: {
         padding: 8,
