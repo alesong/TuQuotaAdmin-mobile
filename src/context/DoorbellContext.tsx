@@ -29,6 +29,7 @@ interface DoorbellContextType {
     doorbellServiceId: string | null;
     doorbellProvider: string | null;
     preferences: DoorbellPreferences;
+    lastRingAt: number | null;
     dismissAlert: () => void;
     triggerRing: () => void;
     updatePreferences: (prefs: DoorbellPreferences) => Promise<void>;
@@ -40,6 +41,7 @@ const DoorbellContext = createContext<DoorbellContextType>({
   doorbellServiceId: null,
   doorbellProvider: null,
   preferences: DEFAULT_PREFS,
+  lastRingAt: null,
   triggerRing: () => {},
   dismissAlert: () => {},
   updatePreferences: async () => {},
@@ -74,6 +76,7 @@ export function DoorbellProvider({ children }: { children: React.ReactNode }) {
   const [doorbellProvider, setDoorbellProvider] = useState<string | null>(null);
   const [showAlert, setShowAlert] = useState(false);
   const [lastSnapshot, setLastSnapshot] = useState<string | null>(null);
+  const [lastRingAt, setLastRingAt] = useState<number | null>(null);
   const [preferences, setPreferences] = useState<DoorbellPreferences>(DEFAULT_PREFS);
   const alertTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const prefsRef = useRef<DoorbellPreferences>(DEFAULT_PREFS);
@@ -131,6 +134,7 @@ export function DoorbellProvider({ children }: { children: React.ReactNode }) {
         const identifier = notification.request.identifier;
 
         if (typeof data.image === 'string') setLastSnapshot(data.image);
+        setLastRingAt(Date.now());
         setShowAlert(true);
         if (prefsRef.current.enabled) {
           playDoorbellSound(prefsRef.current.sound);
@@ -187,7 +191,7 @@ export function DoorbellProvider({ children }: { children: React.ReactNode }) {
 
   return (
     <DoorbellContext.Provider
-      value={{ connected: true, showAlert, doorbellServiceId, doorbellProvider, preferences, triggerRing: handleRing, dismissAlert, updatePreferences }}
+      value={{ connected: true, showAlert, doorbellServiceId, doorbellProvider, preferences, lastRingAt, triggerRing: handleRing, dismissAlert, updatePreferences }}
     >
       {children}
       {showAlert && (

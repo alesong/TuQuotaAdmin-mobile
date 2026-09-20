@@ -88,6 +88,19 @@ const formatSnapshotTime = (ts: any) => {
     return `${h}:${String(d.getMinutes()).padStart(2, '0')} ${period}`;
 };
 
+const formatSnapshotDateTime = (ts: any) => {
+    if (!ts) return null;
+    const d = new Date(typeof ts === 'number' ? ts : String(ts));
+    if (isNaN(d.getTime())) return null;
+    const day = String(d.getDate()).padStart(2, '0');
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const year = d.getFullYear();
+    let h = d.getHours();
+    const period = h >= 12 ? 'pm' : 'am';
+    h = h % 12 === 0 ? 12 : h % 12;
+    return `${day}/${month}/${year} ${h}:${String(d.getMinutes()).padStart(2, '0')} ${period}`;
+};
+
 const fechaStrToDate = (fecha: string) => {
     const [y, m, d] = fecha.split('-').map(Number);
     return new Date(y, m - 1, d);
@@ -342,6 +355,19 @@ export const MyServicesScreen = ({ navigation, route }: any) => {
         }
     }, [token, API_URL]);
 
+    // Cuando llega una notificación de timbre (lastRingAt cambia), refrescar
+    // el historial si el panel está abierto para que la nueva captura aparezca
+    // de inmediato sin esperar el poll periódico.
+    const lastRingAtRef = useRef<number | null>(null);
+    useEffect(() => {
+        if (lastRingAt && lastRingAt !== lastRingAtRef.current) {
+            lastRingAtRef.current = lastRingAt;
+            if (doorbellHistoryFetchedRef.current) {
+                fetchDoorbellHistory();
+            }
+        }
+    }, [lastRingAt, fetchDoorbellHistory]);
+
     // Abre el detalle de un evento/captura del timbre: marca "visto" del propio
     // usuario (primera apertura) y lista quién fue notificado y quién lo vio.
     const markDoorbellReceipt = useCallback(async (item: any) => {
@@ -474,7 +500,7 @@ export const MyServicesScreen = ({ navigation, route }: any) => {
         });
     }, [user?.id]);
 
-    const { connected: doorbellConnected, showAlert: showDoorbellAlert, doorbellServiceId, doorbellProvider, preferences, updatePreferences } = useDoorbell();
+    const { connected: doorbellConnected, showAlert: showDoorbellAlert, doorbellServiceId, doorbellProvider, preferences, lastRingAt, updatePreferences } = useDoorbell();
     const [showDoorbellSettings, setShowDoorbellSettings] = useState(false);
 
     const fetchMisViviendas = async () => {
@@ -1799,7 +1825,7 @@ export const MyServicesScreen = ({ navigation, route }: any) => {
                                                                     <Bell size={10} color="#fff" />
                                                                 </View>
                                                             )}
-                                                            <Text style={styles.doorbellHistoryTime}>{formatSnapshotTime(item.createdAt)}</Text>
+                                                            <Text style={styles.doorbellHistoryTime}>{formatSnapshotDateTime(item.createdAt)}</Text>
                                                             {item.seenUsers > 0 && (
                                                                 <View style={styles.doorbellHistoryThumbSeen}>
                                                                     <CheckCheck size={10} color="#fff" />
@@ -1825,7 +1851,7 @@ export const MyServicesScreen = ({ navigation, route }: any) => {
                                                                     {item.type === 'motion' ? 'Movimiento' : 'Timbre'}
                                                                 </Text>
                                                                 <Text style={styles.doorbellEventTime}>
-                                                                    {formatSnapshotTime(item.createdAt)}
+                                                                    {formatSnapshotDateTime(item.createdAt)}
                                                                 </Text>
                                                             </View>
                                                             {(item.title || item.body) ? (
@@ -1908,7 +1934,7 @@ export const MyServicesScreen = ({ navigation, route }: any) => {
                                         {doorbellDetail.type === 'motion' ? 'Movimiento' : 'Timbre'}
                                     </Text>
                                     <Text style={styles.detailTime}>
-                                        {doorbellDetail.createdAt ? formatSnapshotTime(doorbellDetail.createdAt) : 'Detalle'}
+                                        {doorbellDetail.createdAt ? formatSnapshotDateTime(doorbellDetail.createdAt) : 'Detalle'}
                                     </Text>
                                 </View>
                                 <TouchableOpacity onPress={closeDoorbellDetail} style={styles.detailCloseBtn}>
