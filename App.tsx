@@ -9,8 +9,9 @@ import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { NavigationContainer } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Constants from 'expo-constants';
-import { AuthProvider, useAuth, AlertProvider, initializeConfig, registerAssets, registerForPushNotificationsAsync, setStorageProvider, setupNotificationHandler, DoorbellProvider, getStoredPushToken } from './src/index';
+import { AuthProvider, useAuth, AlertProvider, initializeConfig, registerAssets, registerForPushNotificationsAsync, setStorageProvider, setupNotificationHandler, DoorbellProvider, FloatingGateProvider, getStoredPushToken } from './src/index';
 import NotificationDeepLinkHandler from './src/components/NotificationDeepLinkHandler';
+import { FloatingGateProvider as FloatingGateBtn } from './src/components/FloatingGateWrapper';
 import { navigationRef } from './src/navigation/RootNavigation';
 import { AppNavigator } from './src/navigation/AppNavigator';
 import { useVersionCheck } from './src/hooks/useVersionCheck';
@@ -93,6 +94,25 @@ function PushRegistration() {
   return null;
 }
 
+function AppContent() {
+  const { user } = useAuth();
+
+  return (
+    <FloatingGateProvider userId={user?.id}>
+      <PushRegistration />
+      <NotificationDeepLinkHandler />
+      <DoorbellProvider>
+      <AlertProvider>
+        <NavigationContainer ref={navigationRef}>
+          <AppNavigator />
+        </NavigationContainer>
+        <FloatingGateBtn />
+      </AlertProvider>
+      </DoorbellProvider>
+    </FloatingGateProvider>
+  );
+}
+
 export default function App() {
   console.log("Rendering App");
   useVersionCheck();
@@ -106,15 +126,7 @@ export default function App() {
       <SafeAreaView style={styles.container} edges={['bottom']}>
         <StatusBar style="auto" />
         <AuthProvider>
-          <PushRegistration />
-          <NotificationDeepLinkHandler />
-          <DoorbellProvider>
-          <AlertProvider>
-            <NavigationContainer ref={navigationRef}>
-              <AppNavigator />
-            </NavigationContainer>
-          </AlertProvider>
-          </DoorbellProvider>
+          <AppContent />
         </AuthProvider>
       </SafeAreaView>
     </SafeAreaProvider>

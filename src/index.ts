@@ -6,6 +6,7 @@ export { Assets, registerAssets } from './constants/Assets';
 export { AuthProvider, useAuth } from './context/AuthContext';
 export { AlertProvider, useAlert } from './context/AlertContext';
 export { DoorbellProvider, useDoorbell } from './context/DoorbellContext';
+export { FloatingGateProvider, useFloatingGate } from './context/FloatingGateContext';
 
 export { AlertModal } from './components/AlertModal';
 export type { AlertType, AlertButton } from './components/AlertModal';
@@ -14,6 +15,7 @@ export { Input } from './components/Input';
 export { Checkbox } from './components/Checkbox';
 export { CondoSelectorModal } from './components/CondoSelectorModal';
 export { DoorbellSettingsModal } from './components/DoorbellSettingsModal';
+export { FloatingGateButton } from './components/FloatingGateButton';
 
 export { default as api, setStorageProvider, getStorage } from './lib/api';
 export { initAnalytics, trackPageView, trackEvent } from './lib/analytics';

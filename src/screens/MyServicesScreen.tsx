@@ -12,6 +12,7 @@ import {
     Image,
     Modal,
     BackHandler,
+    Switch,
 } from 'react-native';
 import DateTimePicker, { DateTimePickerAndroid } from '@react-native-community/datetimepicker';
 import { useFocusEffect } from '@react-navigation/native';
@@ -44,6 +45,7 @@ import { getResidentServicesCache, setResidentServicesCache } from '../lib/servi
 import { useAuth } from '../context/AuthContext';
 import { AlertModal } from '../components/AlertModal';
 import { useDoorbell } from '../context/DoorbellContext';
+import { useFloatingGate } from '../context/FloatingGateContext';
 import { DoorbellSettingsModal } from '../components/DoorbellSettingsModal';
 import { CameraStreamViewer } from '../components/CameraStreamViewer';
 import { ZoomableImage } from '../components/ZoomableImage';
@@ -501,6 +503,7 @@ export const MyServicesScreen = ({ navigation, route }: any) => {
     }, [user?.id]);
 
     const { connected: doorbellConnected, showAlert: showDoorbellAlert, doorbellServiceId, doorbellProvider, preferences, lastRingAt, updatePreferences } = useDoorbell();
+    const { enabled: floatingEnabled, serviceId: floatingServiceId, buttonConfig: floatingBtnConfig, toggleEnabled: toggleFloating, setService: setFloatingService } = useFloatingGate();
     const [showDoorbellSettings, setShowDoorbellSettings] = useState(false);
 
     const fetchMisViviendas = async () => {
@@ -1218,6 +1221,25 @@ export const MyServicesScreen = ({ navigation, route }: any) => {
                                                 disabled={s.status !== 'ACTIVE'}
                                                 loading={gateLoading === s.serviceId}
                                             />
+
+                                            {s.status === 'ACTIVE' && (
+                                                <View style={styles.floatingToggle}>
+                                                    <Text style={styles.floatingToggleLabel}>Mantener visible</Text>
+                                                    <Switch
+                                                        value={floatingEnabled && floatingServiceId === s.serviceId}
+                                                        onValueChange={(val) => {
+                                                            if (val) {
+                                                                setFloatingService(s.serviceId, s.serviceName, s.button_config || {});
+                                                                toggleFloating(true);
+                                                            } else {
+                                                                toggleFloating(false);
+                                                            }
+                                                        }}
+                                                        trackColor={{ false: '#d1d5db', true: Colors.primary + '80' }}
+                                                        thumbColor={floatingEnabled && floatingServiceId === s.serviceId ? Colors.primary : '#f4f3f4'}
+                                                    />
+                                                </View>
+                                            )}
                                         </View>
                                     </View>
                                 ))}
@@ -2987,5 +3009,19 @@ const styles = StyleSheet.create({
     recipientStatusText: {
         fontSize: 12,
         fontWeight: '600',
+    },
+    floatingToggle: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        marginTop: 12,
+        paddingTop: 12,
+        borderTopWidth: 1,
+        borderTopColor: Colors.border,
+    },
+    floatingToggleLabel: {
+        fontSize: 13,
+        color: Colors.muted,
+        fontWeight: '500',
     },
 });
