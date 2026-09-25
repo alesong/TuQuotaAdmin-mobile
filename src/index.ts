@@ -7,6 +7,7 @@ export { AuthProvider, useAuth } from './context/AuthContext';
 export { AlertProvider, useAlert } from './context/AlertContext';
 export { DoorbellProvider, useDoorbell } from './context/DoorbellContext';
 export { FloatingGateProvider, useFloatingGate } from './context/FloatingGateContext';
+export type { FloatingAccessService } from './context/FloatingGateContext';
 
 export { AlertModal } from './components/AlertModal';
 export type { AlertType, AlertButton } from './components/AlertModal';
