@@ -3,7 +3,7 @@ import { Linking } from 'react-native';
 import * as Notifications from 'expo-notifications';
 import { useAuth } from '../context/AuthContext';
 import { navigationRef, navigate } from '../navigation/RootNavigation';
-import { Config } from '../constants/Config';
+import { enqueueDoorbellReceipt, flushDoorbellReceipts } from '../lib/doorbellBackgroundTasks';
 
 const POLL_INTERVAL = 300;
 
@@ -38,38 +38,24 @@ function deepLinkToTarget(url: string): DoorbellDetailTarget | null {
   }
 }
 
-function tryNavigateToMyServices(target?: DoorbellDetailTarget | null, imageUrl?: string): boolean {
+function tryNavigateToMyServices(imageUrl?: string, timestamp?: number): boolean {
   if (!navigationRef.isReady()) return false;
+  // Solo navegación + foto: NADA de procesos (receipt, historial, personas
+  // notificadas) viaja por aquí; corren en segundo plano (doorbellBackgroundTasks).
   navigate('MyServices', {
     initialSection: 'others',
     fromDoorbell: true,
     ...(imageUrl ? { imageUrl } : {}),
-    ...(target ? { doorbellDetail: target } : {}),
+    ...(typeof timestamp === 'number' ? { imageUrlTimestamp: timestamp } : {}),
   });
   return true;
 }
 
-function tryNavigateWithRetry(target?: DoorbellDetailTarget | null, imageUrl?: string) {
-  if (tryNavigateToMyServices(target, imageUrl)) return;
+function tryNavigateWithRetry(imageUrl?: string, timestamp?: number) {
+  if (tryNavigateToMyServices(imageUrl, timestamp)) return;
   const interval = setInterval(() => {
-    if (tryNavigateToMyServices(target, imageUrl)) clearInterval(interval);
+    if (tryNavigateToMyServices(imageUrl, timestamp)) clearInterval(interval);
   }, POLL_INTERVAL);
-}
-
-async function markDoorbellReceipt(token: string | null, target: DoorbellDetailTarget | null) {
-  if (!token || !target) return;
-  try {
-    await fetch(`${Config.API_URL}/resident-services/doorbell/receipt`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify({ type: target.type, id: target.id }),
-    });
-  } catch {
-    // Silencio: el receipt se reintenta al abrir el detalle desde la UI.
-  }
 }
 
 export default function NotificationDeepLinkHandler() {
@@ -77,21 +63,29 @@ export default function NotificationDeepLinkHandler() {
   const lastNotificationResponse = Notifications.useLastNotificationResponse();
   const handledColdStart = useRef(false);
 
-  const runTarget = (target: DoorbellDetailTarget | null, imageUrl?: string): boolean => {
+  const runTarget = (target: DoorbellDetailTarget | null, imageUrl?: string, timestamp?: number): boolean => {
     if (handledColdStart.current) return true;
     if (!navigationRef.isReady()) return false;
     if (loading || !user) return false;
 
     handledColdStart.current = true;
-    markDoorbellReceipt(token, target);
+    // Marca "vio la notificación" en segundo plano (cola con reintentos):
+    // nunca espera al servidor ni retrasa la navegación.
+    enqueueDoorbellReceipt(token, target);
     navigate('MyServices', {
       initialSection: 'others',
       fromDoorbell: true,
       ...(imageUrl ? { imageUrl } : {}),
-      ...(target ? { doorbellDetail: target } : {}),
+      ...(typeof timestamp === 'number' ? { imageUrlTimestamp: timestamp } : {}),
     });
     return true;
   };
+
+  // Reenvía en segundo plano receipts pendientes de sesiones anteriores
+  // (app cerrada o sin red cuando se tocó la notificación).
+  useEffect(() => {
+    if (token) flushDoorbellReceipts(token);
+  }, [token]);
 
   // Notificación del timbre (cold start: app abierta desde la notificación)
   useEffect(() => {
@@ -101,8 +95,9 @@ export default function NotificationDeepLinkHandler() {
 
     const target = doorbellTarget(data);
     const imageUrl = typeof data?.image === 'string' ? data.image : undefined;
+    const timestamp = typeof data?.timestamp === 'number' ? data.timestamp : undefined;
 
-    const tryNavigate = (): boolean => runTarget(target, imageUrl);
+    const tryNavigate = (): boolean => runTarget(target, imageUrl, timestamp);
 
     tryNavigate();
     const interval = setInterval(() => {
@@ -118,8 +113,11 @@ export default function NotificationDeepLinkHandler() {
         const data = response.notification.request.content.data;
         if (data?.type === 'doorbell') {
           const target = doorbellTarget(data);
-          markDoorbellReceipt(token, target);
-          tryNavigateWithRetry(target, typeof data.image === 'string' ? data.image : undefined);
+          enqueueDoorbellReceipt(token, target);
+          tryNavigateWithRetry(
+            typeof data.image === 'string' ? data.image : undefined,
+            typeof data.timestamp === 'number' ? data.timestamp : undefined,
+          );
         }
       },
     );
@@ -133,8 +131,8 @@ export default function NotificationDeepLinkHandler() {
     const handleUrl = (url: string) => {
       const target = deepLinkToTarget(url);
       if (!target) return;
-      markDoorbellReceipt(token, target);
-      tryNavigateWithRetry(target);
+      enqueueDoorbellReceipt(token, target);
+      tryNavigateWithRetry();
     };
 
     Linking.getInitialURL().then((url) => {

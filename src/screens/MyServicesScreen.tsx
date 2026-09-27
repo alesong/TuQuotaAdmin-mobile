@@ -205,7 +205,7 @@ export const MyServicesScreen = ({ navigation, route }: any) => {
     const fromDoorbellRef = useRef(false);
     const camerasAppliedRef = useRef(false);
     useEffect(() => {
-        if ((route?.params as any)?.fromDoorbell || (route?.params as any)?.doorbellDetail) {
+        if ((route?.params as any)?.fromDoorbell) {
             fromDoorbellRef.current = true;
         }
         if (!fromDoorbellRef.current || camerasAppliedRef.current) return;
@@ -253,6 +253,10 @@ export const MyServicesScreen = ({ navigation, route }: any) => {
     const [doorbellHistoryLoading, setDoorbellHistoryLoading] = useState(false);
     const [doorbellPreviewUrl, setDoorbellPreviewUrl] = useState<string | null>(null);
     const doorbellHistoryFetchedRef = useRef(false);
+    // Notificación nueva con el historial cerrado: se marca como pendiente
+    // (dirty) para recargarlo SOLO cuando el usuario lo vuelva a desplegar;
+    // nunca se muestra ni se actualiza el historial de forma automática.
+    const doorbellHistoryDirtyRef = useRef(false);
 
     // Doorbell event detail (WhatsApp-style recipients/seen)
     const [doorbellDetail, setDoorbellDetail] = useState<any | null>(null);
@@ -276,6 +280,11 @@ export const MyServicesScreen = ({ navigation, route }: any) => {
     // Tracks whether the user already has services rendered (from cache or a previous load),
     // so background refreshes don't show a blocking spinner.
     const servicesReadyRef = useRef(false);
+    // Foto de la notificación push (param de ruta). Se libera en cuanto el
+    // servidor confirma la snapshot actualizada, para que la tarjeta no
+    // quede congelada con la foto del payload y siga el poll normal.
+    const imageUrlParamRef = useRef<string | undefined>(undefined);
+    imageUrlParamRef.current = (route?.params as any)?.imageUrl;
 
     const showAlert = (title: string, message: string, type: 'success' | 'error' | 'warning' = 'success') => {
         setAlertConfig({ title, message, type });
@@ -299,6 +308,17 @@ export const MyServicesScreen = ({ navigation, route }: any) => {
                     new Map(data.map((s: any) => [s.serviceId, s])).values()
                 );
                 setServices(uniqueServices);
+                // Si la tarjeta muestra la foto de la notificación y el servidor
+                // ya devuelve la snapshot actualizada, se libera el param: a
+                // partir de ahí manda el valor del servidor (poll cada 20 s).
+                if (
+                    imageUrlParamRef.current &&
+                    uniqueServices.some(
+                        (s: any) => s.provider === 'TuyaSmart' && typeof s.lastSnapshot === 'string' && s.lastSnapshot
+                    )
+                ) {
+                    navigation?.setParams?.({ imageUrl: undefined, imageUrlTimestamp: undefined });
+                }
                 if (user?.id) {
                     setResidentServicesCache(user.id, {
                         services: uniqueServices,
@@ -349,6 +369,9 @@ export const MyServicesScreen = ({ navigation, route }: any) => {
                 const data = await response.json();
                 setDoorbellHistory(Array.isArray(data) ? data : []);
                 doorbellHistoryFetchedRef.current = true;
+                // Histórico recargado con éxito: ya no queda ninguna
+                // notificación pendiente de reflejar en el panel.
+                doorbellHistoryDirtyRef.current = false;
             }
         } catch (error: any) {
             console.error('Error fetching doorbell history:', error);
@@ -356,19 +379,6 @@ export const MyServicesScreen = ({ navigation, route }: any) => {
             setDoorbellHistoryLoading(false);
         }
     }, [token, API_URL]);
-
-    // Cuando llega una notificación de timbre (lastRingAt cambia), refrescar
-    // el historial si el panel está abierto para que la nueva captura aparezca
-    // de inmediato sin esperar el poll periódico.
-    const lastRingAtRef = useRef<number | null>(null);
-    useEffect(() => {
-        if (lastRingAt && lastRingAt !== lastRingAtRef.current) {
-            lastRingAtRef.current = lastRingAt;
-            if (doorbellHistoryFetchedRef.current) {
-                fetchDoorbellHistory();
-            }
-        }
-    }, [lastRingAt, fetchDoorbellHistory]);
 
     // Abre el detalle de un evento/captura del timbre: marca "visto" del propio
     // usuario (primera apertura) y lista quién fue notificado y quién lo vio.
@@ -426,21 +436,24 @@ export const MyServicesScreen = ({ navigation, route }: any) => {
         setDoorbellRecipients([]);
     }, []);
 
-    // Abre el detalle cuando el usuario llega desde un deep-link (notificación
-    // del timbre) trayendo doorbellDetail en los parámetros de ruta.
-    const doorbellDetailParam = (route?.params as any)?.doorbellDetail;
+    // Foto enviada con la notificación push: se siembra en la tarjeta para
+    // mostrarla de inmediato al abrir "Mis Servicios". NO se abre el detalle
+    // ni la lista de personas notificadas desde la notificación: esas acciones
+    // ocurren solo si el usuario despliega el historial y toca un evento.
+    // El param se libera cuando el servidor confirma la snapshot actualizada
+    // (fetchMyServices / refreshDoorbellSnapshot) para no congelar la foto.
+    const imageUrlParam = (route?.params as any)?.imageUrl as string | undefined;
+    const imageUrlTimestamp = (route?.params as any)?.imageUrlTimestamp as number | undefined;
     useEffect(() => {
-        if (doorbellDetailParam?.id && doorbellDetailParam?.type) {
-            const item = {
-                id: doorbellDetailParam.id,
-                entityType: doorbellDetailParam.type,
-                type: 'ring',
-            };
-            openDoorbellDetail(item);
-            // Limpiar el parámetro para no reabrir en cada focus.
-            if (navigation?.setParams) navigation.setParams({ doorbellDetail: undefined });
-        }
-    }, [doorbellDetailParam?.id, doorbellDetailParam?.type]);
+        if (typeof imageUrlParam !== 'string' || !imageUrlParam) return;
+        setServices(prev =>
+            prev.map(s =>
+                s.provider === 'TuyaSmart'
+                    ? { ...s, lastSnapshot: imageUrlParam, lastSnapshotAt: imageUrlTimestamp || s.lastSnapshotAt }
+                    : s
+            )
+        );
+    }, [imageUrlParam, imageUrlTimestamp, services.length]);
 
     // Actualiza periódicamente la "última foto" del timbre que se muestra en la
     // tarjeta, sin recargar toda la pantalla. Consulta el endpoint liviano
@@ -455,6 +468,12 @@ export const MyServicesScreen = ({ navigation, route }: any) => {
             if (!response.ok) return;
             const data = await response.json();
             if (!data || typeof data.imageUrl !== 'string') return;
+
+            // Snapshot confirmada por el servidor: se libera la foto del param
+            // de la notificación para que la tarjeta siga el poll normal.
+            if (imageUrlParamRef.current) {
+                navigation?.setParams?.({ imageUrl: undefined, imageUrlTimestamp: undefined });
+            }
 
             setServices(prev => {
                 const current = prev.find(
@@ -505,6 +524,23 @@ export const MyServicesScreen = ({ navigation, route }: any) => {
     const { connected: doorbellConnected, showAlert: showDoorbellAlert, doorbellServiceId, doorbellProvider, preferences, lastRingAt, updatePreferences } = useDoorbell();
     const { enabled: floatingEnabled, serviceId: floatingServiceId, buttonConfig: floatingBtnConfig, toggleEnabled: toggleFloating, setService: setFloatingService } = useFloatingGate();
     const [showDoorbellSettings, setShowDoorbellSettings] = useState(false);
+
+    // Cuando llega una notificación de timbre (lastRingAt cambia):
+    //  - panel desplegado → se refresca en segundo plano (solo afecta al
+    //    interior del panel ya abierto, sin bloquear la pantalla);
+    //  - panel cerrado → solo se marca como pendiente (dirty): el historial
+    //    se recarga cuando el usuario lo despliegue, nunca automáticamente.
+    const lastRingAtRef = useRef<number | null>(null);
+    useEffect(() => {
+        if (lastRingAt && lastRingAt !== lastRingAtRef.current) {
+            lastRingAtRef.current = lastRingAt;
+            if (doorbellHistoryOpen) {
+                fetchDoorbellHistory();
+            } else {
+                doorbellHistoryDirtyRef.current = true;
+            }
+        }
+    }, [lastRingAt, doorbellHistoryOpen, fetchDoorbellHistory]);
 
     const fetchMisViviendas = async () => {
         try {
@@ -1803,7 +1839,7 @@ export const MyServicesScreen = ({ navigation, route }: any) => {
                                                                 onPress={() => {
                                                                     const next = !doorbellHistoryOpen;
                                                                     setDoorbellHistoryOpen(next);
-                                                                    if (next && !doorbellHistoryFetchedRef.current) {
+                                                                    if (next && (!doorbellHistoryFetchedRef.current || doorbellHistoryDirtyRef.current)) {
                                                                         fetchDoorbellHistory();
                                                                     }
                                                                 }}
