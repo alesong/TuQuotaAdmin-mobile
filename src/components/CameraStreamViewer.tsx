@@ -7,11 +7,25 @@ import { Colors } from '../constants/Colors';
 interface CameraStreamViewerProps {
     streamUrl: string;
     serviceName: string;
+    /** Detalle del último error del backend (p. ej. "Ezviz API [código 20007]: ..."). */
+    errorDetail?: string | null;
+    /**
+     * Obtiene una URL nueva antes de reintentar: las URL HLS caducan (expireTime),
+     * así que reintentar con la misma URL vieja siempre fallaría.
+     * Debe resolver con la nueva URL, o null si ya no hay stream disponible.
+     */
+    onRefresh?: () => Promise<string | null> | string | null;
 }
 
-export const CameraStreamViewer: React.FC<CameraStreamViewerProps> = ({ streamUrl, serviceName }) => {
+export const CameraStreamViewer: React.FC<CameraStreamViewerProps> = ({
+    streamUrl,
+    serviceName,
+    errorDetail,
+    onRefresh,
+}) => {
     const [showVideo, setShowVideo] = useState(false);
     const [hasError, setHasError] = useState(false);
+    const [retrying, setRetrying] = useState(false);
 
     const player = useVideoPlayer(
         showVideo && streamUrl ? { uri: streamUrl } : null,
@@ -30,6 +44,40 @@ export const CameraStreamViewer: React.FC<CameraStreamViewerProps> = ({ streamUr
         }
     }, [status]);
 
+    // Al cambiar la fuente, useVideoPlayer crea un reproductor nuevo y reproduce:
+    // se limpia el estado de error del intento anterior.
+    React.useEffect(() => {
+        setHasError(false);
+    }, [streamUrl]);
+
+    const restartPlayer = () => {
+        setHasError(false);
+        setShowVideo(false);
+        setTimeout(() => setShowVideo(true), 100);
+    };
+
+    const handleRetry = async () => {
+        if (!onRefresh) {
+            // Sin callback: sólo se reinicia con la URL actual.
+            restartPlayer();
+            return;
+        }
+        setRetrying(true);
+        try {
+            const newUrl = await onRefresh();
+            if (!newUrl) {
+                // El backend devolvió un error nuevo: se muestra vía errorDetail.
+                setHasError(true);
+                return;
+            }
+            restartPlayer();
+        } catch {
+            setHasError(true);
+        } finally {
+            setRetrying(false);
+        }
+    };
+
     if (!showVideo) {
         return (
             <TouchableOpacity
@@ -45,15 +93,17 @@ export const CameraStreamViewer: React.FC<CameraStreamViewerProps> = ({ streamUr
         return (
             <View style={styles.errorContainer}>
                 <Text style={styles.errorText}>No se pudo reproducir el stream</Text>
+                {!!errorDetail && <Text style={styles.errorDetail}>{errorDetail}</Text>}
                 <TouchableOpacity
-                    style={styles.retryBtn}
-                    onPress={() => {
-                        setHasError(false);
-                        setShowVideo(false);
-                        setTimeout(() => setShowVideo(true), 100);
-                    }}
+                    style={[styles.retryBtn, retrying && styles.retryBtnDisabled]}
+                    onPress={handleRetry}
+                    disabled={retrying}
                 >
-                    <Text style={styles.retryBtnText}>Reintentar</Text>
+                    {retrying ? (
+                        <ActivityIndicator size="small" color="#ffffff" />
+                    ) : (
+                        <Text style={styles.retryBtnText}>Reintentar</Text>
+                    )}
                 </TouchableOpacity>
             </View>
         );
@@ -113,7 +163,7 @@ const styles = StyleSheet.create({
         fontWeight: 'bold',
     },
     errorContainer: {
-        height: 150,
+        minHeight: 150,
         backgroundColor: '#fff1f2',
         borderWidth: 1,
         borderColor: '#ffe4e6',
@@ -127,6 +177,12 @@ const styles = StyleSheet.create({
         color: '#b91c1c',
         textAlign: 'center',
         fontWeight: '600',
+        marginBottom: 6,
+    },
+    errorDetail: {
+        fontSize: 12,
+        color: '#b91c1c',
+        textAlign: 'center',
         marginBottom: 10,
     },
     retryBtn: {
@@ -134,6 +190,12 @@ const styles = StyleSheet.create({
         paddingVertical: 8,
         paddingHorizontal: 20,
         borderRadius: 8,
+        minWidth: 120,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    retryBtnDisabled: {
+        opacity: 0.7,
     },
     retryBtnText: {
         color: '#ffffff',

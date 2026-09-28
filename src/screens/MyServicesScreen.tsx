@@ -13,6 +13,8 @@ import {
     Modal,
     BackHandler,
     Switch,
+    Linking,
+    Alert,
 } from 'react-native';
 import DateTimePicker, { DateTimePickerAndroid } from '@react-native-community/datetimepicker';
 import { useFocusEffect } from '@react-navigation/native';
@@ -273,6 +275,7 @@ export const MyServicesScreen = ({ navigation, route }: any) => {
     const API_URL = Config.API_URL;
 
     const [cameraStreams, setCameraStreams] = useState<Record<string, string | null>>({});
+    const [cameraStreamErrors, setCameraStreamErrors] = useState<Record<string, string | null>>({});
     const [loadingStreams, setLoadingStreams] = useState<Record<string, boolean>>({});
 
     const fetchMyServicesRef = useRef<((options?: { notifyOnError?: boolean }) => Promise<void>) | null>(null);
@@ -1090,23 +1093,54 @@ export const MyServicesScreen = ({ navigation, route }: any) => {
         }
     };
 
-    const fetchCameraStream = async (serviceId: string) => {
-        if (cameraStreams[serviceId]) return;
+    /**
+     * Obtiene (o refresca, con force) la URL del stream desde el backend.
+     * Devuelve la URL o null, y guarda el detalle del error si lo hay
+     * (las URL HLS caducan, así que hay que pedirlas de nuevo al reintentar).
+     */
+    const fetchCameraStream = async (serviceId: string, force = false): Promise<string | null> => {
+        if (!force && cameraStreams[serviceId]) return cameraStreams[serviceId];
         setLoadingStreams(prev => ({ ...prev, [serviceId]: true }));
         try {
             const response = await fetch(`${API_URL}/resident-services/camera-stream/${serviceId}`, {
                 headers: { 'Authorization': `Bearer ${token}` },
             });
-            if (response.ok) {
-                const data = await response.json();
-                setCameraStreams(prev => ({ ...prev, [serviceId]: data.streamUrl }));
-            } else {
-                setCameraStreams(prev => ({ ...prev, [serviceId]: null }));
-            }
+            const data = await response.json().catch(() => null);
+            const streamUrl = response.ok ? (data?.streamUrl || null) : null;
+            const error: string | null = response.ok
+                ? (streamUrl ? null : (data?.error || data?.reason || 'El servicio no tiene una URL de reproducción disponible.'))
+                : (data?.error || data?.message || `Error ${response.status} al obtener la transmisión.`);
+            setCameraStreams(prev => ({ ...prev, [serviceId]: streamUrl }));
+            setCameraStreamErrors(prev => ({ ...prev, [serviceId]: error }));
+            return streamUrl;
         } catch {
             setCameraStreams(prev => ({ ...prev, [serviceId]: null }));
+            setCameraStreamErrors(prev => ({ ...prev, [serviceId]: 'No se pudo conectar con el servidor. Revisa tu conexión.' }));
+            return null;
         } finally {
             setLoadingStreams(prev => ({ ...prev, [serviceId]: false }));
+        }
+    };
+
+    /** Abre la cámara en la app oficial de EZVIZ (deep link, igual que en web-propietarios). */
+    const openEzvizApp = async (deviceSerial?: string) => {
+        const deepLink = deviceSerial
+            ? `ezviz://open?deviceSerial=${encodeURIComponent(deviceSerial)}`
+            : 'ezviz://';
+        try {
+            await Linking.openURL(deepLink);
+        } catch {
+            const storeUrl = Platform.OS === 'ios'
+                ? 'https://apps.apple.com/app/ezviz/id886947564'
+                : 'https://play.google.com/store/apps/details?id=com.ezviz';
+            Alert.alert(
+                'App EZVIZ no instalada',
+                'Instala la app oficial de EZVIZ para ver la cámara con todas sus funciones.',
+                [
+                    { text: 'Cancelar', style: 'cancel' },
+                    { text: 'Descargar', onPress: () => Linking.openURL(storeUrl).catch(() => {}) },
+                ],
+            );
         }
     };
 
@@ -1343,13 +1377,39 @@ export const MyServicesScreen = ({ navigation, route }: any) => {
                                                         <Text style={styles.cameraLoadingText}>Cargando stream...</Text>
                                                     </View>
                                                 ) : cameraStreams[s.serviceId] ? (
-                                                    <CameraStreamViewer streamUrl={cameraStreams[s.serviceId]!} serviceName={s.serviceName} />
+                                                    <CameraStreamViewer
+                                                        streamUrl={cameraStreams[s.serviceId]!}
+                                                        serviceName={s.serviceName}
+                                                        errorDetail={cameraStreamErrors[s.serviceId] || null}
+                                                        onRefresh={() => fetchCameraStream(s.serviceId, true)}
+                                                    />
+                                                ) : cameraStreamErrors[s.serviceId] ? (
+                                                    <View style={styles.cameraErrorContainer}>
+                                                        <AlertCircle size={26} color={Colors.error} style={{ marginBottom: 6 }} />
+                                                        <Text style={styles.cameraErrorText}>No se pudo cargar la transmisión</Text>
+                                                        <Text style={styles.cameraErrorDetail}>{cameraStreamErrors[s.serviceId]}</Text>
+                                                        <TouchableOpacity
+                                                            style={styles.cameraRetryBtn}
+                                                            onPress={() => fetchCameraStream(s.serviceId, true)}
+                                                        >
+                                                            <Text style={styles.cameraRetryBtnText}>Reintentar</Text>
+                                                        </TouchableOpacity>
+                                                    </View>
                                                 ) : (
                                                     <TouchableOpacity
                                                         style={styles.cameraActivateBtn}
                                                         onPress={() => fetchCameraStream(s.serviceId)}
                                                     >
                                                         <Text style={styles.cameraActivateBtnText}>Ver transmisión en vivo</Text>
+                                                    </TouchableOpacity>
+                                                )}
+                                                {(s.provider === 'Ezviz' || s.provider === 'EZVIZ') && !!s.deviceSerial && (
+                                                    <TouchableOpacity
+                                                        style={styles.openEzvizBtn}
+                                                        onPress={() => openEzvizApp(s.deviceSerial)}
+                                                    >
+                                                        <Smartphone size={16} color={Colors.primary} style={{ marginRight: 8 }} />
+                                                        <Text style={styles.openEzvizBtnText}>Abrir en App EZVIZ</Text>
                                                     </TouchableOpacity>
                                                 )}
                                             </>
@@ -2324,6 +2384,57 @@ const styles = StyleSheet.create({
         color: '#fff',
         fontWeight: 'bold',
         fontSize: 14,
+    },
+    cameraErrorContainer: {
+        minHeight: 150,
+        backgroundColor: '#fff1f2',
+        borderWidth: 1,
+        borderColor: '#ffe4e6',
+        borderRadius: 12,
+        justifyContent: 'center',
+        alignItems: 'center',
+        padding: 16,
+    },
+    cameraErrorText: {
+        fontSize: 13,
+        color: '#b91c1c',
+        fontWeight: '600',
+        textAlign: 'center',
+    },
+    cameraErrorDetail: {
+        fontSize: 12,
+        color: '#b91c1c',
+        textAlign: 'center',
+        marginTop: 6,
+    },
+    cameraRetryBtn: {
+        marginTop: 12,
+        backgroundColor: Colors.primary,
+        paddingVertical: 8,
+        paddingHorizontal: 22,
+        borderRadius: 8,
+        alignItems: 'center',
+    },
+    cameraRetryBtnText: {
+        color: '#fff',
+        fontSize: 13,
+        fontWeight: 'bold',
+    },
+    openEzvizBtn: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        marginTop: 10,
+        paddingVertical: 11,
+        borderRadius: 10,
+        borderWidth: 1,
+        borderColor: Colors.primary,
+        backgroundColor: '#eff6ff',
+    },
+    openEzvizBtnText: {
+        color: Colors.primary,
+        fontSize: 13,
+        fontWeight: 'bold',
     },
     cameraSuspendedContainer: {
         height: 150,
