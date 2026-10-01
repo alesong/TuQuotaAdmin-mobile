@@ -50,6 +50,7 @@ import { useDoorbell } from '../context/DoorbellContext';
 import { useFloatingGate } from '../context/FloatingGateContext';
 import { DoorbellSettingsModal } from '../components/DoorbellSettingsModal';
 import { CameraStreamViewer } from '../components/CameraStreamViewer';
+import { CameraFrameViewer } from '../components/CameraFrameViewer';
 import { ZoomableImage } from '../components/ZoomableImage';
 import { toDataURL } from 'qrcode';
 
@@ -276,6 +277,10 @@ export const MyServicesScreen = ({ navigation, route }: any) => {
 
     const [cameraStreams, setCameraStreams] = useState<Record<string, string | null>>({});
     const [cameraStreamErrors, setCameraStreamErrors] = useState<Record<string, string | null>>({});
+    // Tipo de stream por servicio: "mjpeg" (Cameras Center) se reproduce con
+    // CameraFrameViewer (polling de fotogramas: expo-video sólo admite HLS/MP4);
+    // el resto (manual/EZVIZ → HLS) con CameraStreamViewer.
+    const [cameraStreamTypes, setCameraStreamTypes] = useState<Record<string, string | null>>({});
     const [loadingStreams, setLoadingStreams] = useState<Record<string, boolean>>({});
 
     const fetchMyServicesRef = useRef<((options?: { notifyOnError?: boolean }) => Promise<void>) | null>(null);
@@ -1107,14 +1112,29 @@ export const MyServicesScreen = ({ navigation, route }: any) => {
             });
             const data = await response.json().catch(() => null);
             const streamUrl = response.ok ? (data?.streamUrl || null) : null;
+            // Motivos nuevos de la rama Cameras Center → mensaje amigable.
+            const reasonMessages: Record<string, string> = {
+                NO_CAMERA_SELECTED: 'El administrador no ha seleccionado la cámara de este servicio.',
+                INTEGRATION_MISSING: 'Este servicio no tiene la integración de cámaras configurada.',
+                SUSPENDED: 'El acceso a este servicio está suspendido.',
+            };
             const error: string | null = response.ok
-                ? (streamUrl ? null : (data?.error || data?.reason || 'El servicio no tiene una URL de reproducción disponible.'))
+                ? (streamUrl
+                    ? null
+                    : (data?.error || reasonMessages[data?.reason] || data?.reason || 'El servicio no tiene una URL de reproducción disponible.'))
                 : (data?.error || data?.message || `Error ${response.status} al obtener la transmisión.`);
             setCameraStreams(prev => ({ ...prev, [serviceId]: streamUrl }));
+            setCameraStreamTypes(prev => ({
+                ...prev,
+                [serviceId]: streamUrl
+                    ? (data?.streamType ?? (data?.source === 'cameras_center' ? 'mjpeg' : null))
+                    : null,
+            }));
             setCameraStreamErrors(prev => ({ ...prev, [serviceId]: error }));
             return streamUrl;
         } catch {
             setCameraStreams(prev => ({ ...prev, [serviceId]: null }));
+            setCameraStreamTypes(prev => ({ ...prev, [serviceId]: null }));
             setCameraStreamErrors(prev => ({ ...prev, [serviceId]: 'No se pudo conectar con el servidor. Revisa tu conexión.' }));
             return null;
         } finally {
@@ -1377,12 +1397,22 @@ export const MyServicesScreen = ({ navigation, route }: any) => {
                                                         <Text style={styles.cameraLoadingText}>Cargando stream...</Text>
                                                     </View>
                                                 ) : cameraStreams[s.serviceId] ? (
-                                                    <CameraStreamViewer
-                                                        streamUrl={cameraStreams[s.serviceId]!}
-                                                        serviceName={s.serviceName}
-                                                        errorDetail={cameraStreamErrors[s.serviceId] || null}
-                                                        onRefresh={() => fetchCameraStream(s.serviceId, true)}
-                                                    />
+                                                    cameraStreamTypes[s.serviceId] === 'mjpeg' ? (
+                                                        <CameraFrameViewer
+                                                            frameUrl={cameraStreams[s.serviceId]!}
+                                                            token={token || ''}
+                                                            serviceName={s.serviceName}
+                                                            errorDetail={cameraStreamErrors[s.serviceId] || null}
+                                                            onRefresh={() => fetchCameraStream(s.serviceId, true)}
+                                                        />
+                                                    ) : (
+                                                        <CameraStreamViewer
+                                                            streamUrl={cameraStreams[s.serviceId]!}
+                                                            serviceName={s.serviceName}
+                                                            errorDetail={cameraStreamErrors[s.serviceId] || null}
+                                                            onRefresh={() => fetchCameraStream(s.serviceId, true)}
+                                                        />
+                                                    )
                                                 ) : cameraStreamErrors[s.serviceId] ? (
                                                     <View style={styles.cameraErrorContainer}>
                                                         <AlertCircle size={26} color={Colors.error} style={{ marginBottom: 6 }} />
