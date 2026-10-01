@@ -31,8 +31,9 @@ interface CameraFrameViewerProps {
      */
     onRefresh?: () => Promise<string | null> | string | null;
     /**
-     * Pausa tras cada fotograma en ms. La cadencia real es la latencia del
-     * frame (≈1.5-1.9 s con el proxy actual de Cameras Center) + esta pausa.
+     * Pausa tras cada fotograma en ms. La cadencia real es la latencia de la
+     * respuesta + esta pausa: con la caché de frames del backend (<100 ms)
+     * 400 ms equivale a ~2 fps.
      */
     intervalMs?: number;
 }
@@ -51,7 +52,7 @@ export const CameraFrameViewer: React.FC<CameraFrameViewerProps> = ({
     serviceName,
     errorDetail,
     onRefresh,
-    intervalMs = 200,
+    intervalMs = 400,
 }) => {
     // Doble buffer: capa 0 y capa 1 se alternan. La capa "front" muestra el
     // último fotograma bueno y NO se toca; la nueva carga en la capa de
