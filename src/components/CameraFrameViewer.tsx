@@ -45,7 +45,6 @@ export const CameraFrameViewer: React.FC<CameraFrameViewerProps> = ({
     onRefresh,
     intervalMs = 800,
 }) => {
-    const [started, setStarted] = useState(false);
     const [frameUri, setFrameUri] = useState<string | null>(null);
     const [loaded, setLoaded] = useState(false);
     const [hasError, setHasError] = useState(false);
@@ -65,9 +64,10 @@ export const CameraFrameViewer: React.FC<CameraFrameViewerProps> = ({
         [token],
     );
 
-    // Polling: pide un fotograma mientras esté arrancado y sin error.
+    // Polling: pide un fotograma mientras el visor esté montado y sin error
+    // (el componente sólo se monta tras pulsar "Ver transmisión en vivo").
     useEffect(() => {
-        if (!started || hasError) return;
+        if (hasError) return;
 
         const requestFrame = () => {
             // En segundo plano no se pide nada (batería y espectadores de
@@ -79,7 +79,7 @@ export const CameraFrameViewer: React.FC<CameraFrameViewerProps> = ({
         requestFrame(); // primer fotograma sin esperar al primer intervalo
         const id = setInterval(requestFrame, intervalMs);
         return () => clearInterval(id);
-    }, [started, hasError, frameUrl, buildUri, intervalMs]);
+    }, [hasError, frameUrl, buildUri, intervalMs]);
 
     useEffect(() => {
         const subscription = AppState.addEventListener('change', state => {
@@ -122,26 +122,16 @@ export const CameraFrameViewer: React.FC<CameraFrameViewerProps> = ({
                 return;
             }
             errorCountRef.current = 0;
-            setHasError(false);
             setLoaded(false);
-            setFrameUri(buildUri(newUrl));
+            // No se construye la URI con newUrl (es el stream): el polling se
+            // reinicia solo con el prop frameUrl, ya actualizado por el refresh.
+            setHasError(false);
         } catch {
             setHasError(true);
         } finally {
             setRetrying(false);
         }
     };
-
-    if (!started) {
-        return (
-            <TouchableOpacity
-                style={styles.activateBtn}
-                onPress={() => setStarted(true)}
-            >
-                <Text style={styles.activateBtnText}>Ver transmisión en vivo</Text>
-            </TouchableOpacity>
-        );
-    }
 
     if (hasError) {
         return (
@@ -207,19 +197,6 @@ const styles = StyleSheet.create({
         color: '#ffffff',
         fontSize: 12,
         marginTop: 8,
-    },
-    activateBtn: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'center',
-        backgroundColor: Colors.primary,
-        paddingVertical: 14,
-        borderRadius: 10,
-    },
-    activateBtnText: {
-        color: '#ffffff',
-        fontSize: 14,
-        fontWeight: 'bold',
     },
     errorContainer: {
         minHeight: 150,

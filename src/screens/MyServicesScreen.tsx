@@ -281,6 +281,10 @@ export const MyServicesScreen = ({ navigation, route }: any) => {
     // CameraFrameViewer (polling de fotogramas: expo-video sólo admite HLS/MP4);
     // el resto (manual/EZVIZ → HLS) con CameraStreamViewer.
     const [cameraStreamTypes, setCameraStreamTypes] = useState<Record<string, string | null>>({});
+    // URL del último fotograma JPEG (sólo Cameras Center): el <Image> de RN no
+    // puede decodificar el stream MJPEG (multipart/x-mixed-replace), así que el
+    // visor hace polling de este frame en lugar del stream.
+    const [cameraFrameUrls, setCameraFrameUrls] = useState<Record<string, string | null>>({});
     const [loadingStreams, setLoadingStreams] = useState<Record<string, boolean>>({});
 
     const fetchMyServicesRef = useRef<((options?: { notifyOnError?: boolean }) => Promise<void>) | null>(null);
@@ -1124,6 +1128,10 @@ export const MyServicesScreen = ({ navigation, route }: any) => {
                     : (data?.error || reasonMessages[data?.reason] || data?.reason || 'El servicio no tiene una URL de reproducción disponible.'))
                 : (data?.error || data?.message || `Error ${response.status} al obtener la transmisión.`);
             setCameraStreams(prev => ({ ...prev, [serviceId]: streamUrl }));
+            setCameraFrameUrls(prev => ({
+                ...prev,
+                [serviceId]: streamUrl ? (data?.frameUrl || null) : null,
+            }));
             setCameraStreamTypes(prev => ({
                 ...prev,
                 [serviceId]: streamUrl
@@ -1134,6 +1142,7 @@ export const MyServicesScreen = ({ navigation, route }: any) => {
             return streamUrl;
         } catch {
             setCameraStreams(prev => ({ ...prev, [serviceId]: null }));
+            setCameraFrameUrls(prev => ({ ...prev, [serviceId]: null }));
             setCameraStreamTypes(prev => ({ ...prev, [serviceId]: null }));
             setCameraStreamErrors(prev => ({ ...prev, [serviceId]: 'No se pudo conectar con el servidor. Revisa tu conexión.' }));
             return null;
@@ -1399,7 +1408,7 @@ export const MyServicesScreen = ({ navigation, route }: any) => {
                                                 ) : cameraStreams[s.serviceId] ? (
                                                     cameraStreamTypes[s.serviceId] === 'mjpeg' ? (
                                                         <CameraFrameViewer
-                                                            frameUrl={cameraStreams[s.serviceId]!}
+                                                            frameUrl={cameraFrameUrls[s.serviceId] || cameraStreams[s.serviceId]!}
                                                             token={token || ''}
                                                             serviceName={s.serviceName}
                                                             errorDetail={cameraStreamErrors[s.serviceId] || null}
