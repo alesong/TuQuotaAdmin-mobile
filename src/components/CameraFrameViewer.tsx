@@ -51,9 +51,16 @@ export const CameraFrameViewer: React.FC<CameraFrameViewerProps> = ({
     serviceName,
     errorDetail,
     onRefresh,
-    intervalMs = 800,
+    intervalMs = 200,
 }) => {
-    const [frameUri, setFrameUri] = useState<string | null>(null);
+    // Doble buffer: capa 0 y capa 1 se alternan. La capa "front" muestra el
+    // último fotograma bueno y NO se toca; la nueva carga en la capa de
+    // fondo y sólo se pone al frente al terminar, así nunca se ve pantalla
+    // negra entre fotogramas (Fresco borra la imagen al cambiar la URI).
+    const [uris, setUris] = useState<(string | null)[]>([null, null]);
+    const [frontIdx, setFrontIdx] = useState<0 | 1>(0);
+    /** Capa que recibe el próximo fotograma (la que no está al frente). */
+    const backRef = useRef<0 | 1>(0);
     const [loaded, setLoaded] = useState(false);
     const [hasError, setHasError] = useState(false);
     const [retrying, setRetrying] = useState(false);
@@ -61,8 +68,8 @@ export const CameraFrameViewer: React.FC<CameraFrameViewerProps> = ({
     const appActiveRef = useRef(true);
     // Callbacks del <Image> expuestos al bucle de polling vía ref, para que
     // el efecto no capture closures obsoletas entre renderizaciones.
-    const onLoadRef = useRef<() => void>(() => {});
-    const onErrorRef = useRef<() => void>(() => {});
+    const onLoadRef = useRef<(layer: number) => void>(() => {});
+    const onErrorRef = useRef<(layer: number) => void>(() => {});
 
     // URL absoluta con el JWT y un cache-buster: cada fotograma es una
     // petición nueva (el backend responde con Cache-Control: no-store).
@@ -75,6 +82,19 @@ export const CameraFrameViewer: React.FC<CameraFrameViewerProps> = ({
         },
         [token],
     );
+
+    // Al cambiar la fuente (reintento) se limpia todo el estado del intento
+    // anterior. DEBE DECLARARSE ANTES del bucle de polling: los efectos se
+    // ejecutan en orden y así backRef/uris quedan reiniciados antes de que
+    // el bucle dispare su primer fotograma.
+    useEffect(() => {
+        errorCountRef.current = 0;
+        backRef.current = 0;
+        setUris([null, null]);
+        setFrontIdx(0);
+        setLoaded(false);
+        setHasError(false);
+    }, [frameUrl]);
 
     // Bucle de polling EN CADENA: sólo se pide el siguiente fotograma cuando
     // el anterior terminó (onLoad, onError o watchdog). Un intervalo fijo
@@ -100,7 +120,15 @@ export const CameraFrameViewer: React.FC<CameraFrameViewerProps> = ({
             // listener de AppState la reanuda al volver a 'active'.
             if (!appActiveRef.current) return;
             clearWatchdog();
-            setFrameUri(buildUri(frameUrl));
+            const uri = buildUri(frameUrl);
+            const target = backRef.current;
+            // La capa de fondo se carga (y se borra) sin afectar a la capa
+            // que el usuario está viendo.
+            setUris(prev => {
+                const updated = [...prev];
+                updated[target] = uri;
+                return updated;
+            });
             watchdog = setTimeout(() => {
                 // Petición colgada sin onLoad/onError: cuenta como fallo.
                 watchdog = null;
@@ -114,10 +142,17 @@ export const CameraFrameViewer: React.FC<CameraFrameViewerProps> = ({
             next = setTimeout(requestFrame, delay);
         };
 
-        const handleOk = () => {
+        const handleOk = (layer: number) => {
             if (stopped) return;
+            // Cargas llegadas tarde de otra ronda: se ignoran.
+            if (layer !== backRef.current) return;
             clearWatchdog();
             errorCountRef.current = 0;
+            // Intercambio de capas: la recién cargada pasa al frente (ya
+            // tiene el bitmap decodificado, el cambio es instantáneo) y la
+            // anterior queda de fondo para recibir el próximo fotograma.
+            setFrontIdx(layer as 0 | 1);
+            backRef.current = (layer === 0 ? 1 : 0) as 0 | 1;
             setLoaded(true);
             scheduleNext(intervalMs);
         };
@@ -129,12 +164,17 @@ export const CameraFrameViewer: React.FC<CameraFrameViewerProps> = ({
             if (errorCountRef.current >= MAX_CONSECUTIVE_ERRORS) {
                 setHasError(true);
             } else {
+                // Se reintenta en la MISMA capa de fondo; la capa al frente
+                // sigue mostrando el último fotograma bueno.
                 scheduleNext(intervalMs);
             }
         };
 
         onLoadRef.current = handleOk;
-        onErrorRef.current = handleFail;
+        onErrorRef.current = layer => {
+            if (layer !== backRef.current) return;
+            handleFail();
+        };
 
         const subscription = AppState.addEventListener('change', state => {
             appActiveRef.current = state === 'active';
@@ -152,13 +192,6 @@ export const CameraFrameViewer: React.FC<CameraFrameViewerProps> = ({
             subscription.remove();
         };
     }, [hasError, frameUrl, buildUri, intervalMs]);
-
-    // Al cambiar la fuente (reintento) se limpia el estado del intento anterior.
-    useEffect(() => {
-        errorCountRef.current = 0;
-        setLoaded(false);
-        setHasError(false);
-    }, [frameUrl]);
 
     const handleRetry = async () => {
         if (!onRefresh) {
@@ -208,18 +241,21 @@ export const CameraFrameViewer: React.FC<CameraFrameViewerProps> = ({
 
     return (
         <View style={styles.container}>
-            {!!frameUri && (
-                <Image
-                    source={{ uri: frameUri }}
-                    style={styles.image}
-                    resizeMode="contain"
-                    accessibilityLabel={serviceName}
-                    onLoad={() => onLoadRef.current()}
-                    onError={() => onErrorRef.current()}
-                />
+            {uris.map((uri, idx) =>
+                uri ? (
+                    <Image
+                        key={idx}
+                        source={{ uri }}
+                        style={[styles.image, { zIndex: frontIdx === idx ? 2 : 1 }]}
+                        resizeMode="contain"
+                        accessibilityLabel={serviceName}
+                        onLoad={() => onLoadRef.current(idx)}
+                        onError={() => onErrorRef.current(idx)}
+                    />
+                ) : null
             )}
             {!loaded && (
-                <View style={styles.loadingOverlay}>
+                <View style={[styles.loadingOverlay, { zIndex: 3 }]}>
                     <ActivityIndicator size="small" color="#ffffff" />
                     <Text style={styles.loadingText}>Cargando transmisión...</Text>
                 </View>
@@ -236,7 +272,12 @@ const styles = StyleSheet.create({
         position: 'relative',
         minHeight: 200,
     },
+    // Capas absolutas apiladas (doble buffer): la capa frontal lleva zIndex
+    // mayor y la de fondo recibe la siguiente carga sin parpadear.
     image: {
+        position: 'absolute',
+        top: 0,
+        left: 0,
         width: '100%',
         height: 200,
     },
