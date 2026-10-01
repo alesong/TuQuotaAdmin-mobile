@@ -16,7 +16,7 @@ interface CameraFrameViewerProps {
      * URL relativa del fotograma (…/resident-services/cameras-center/frame/<serviceId>).
      * Cameras Center sólo publica MJPEG y JPEG: MJPEG no es reproducible con
      * expo-video ni con <Image> de React Native, así que se refresca el último
-     * fotograma por polling (~1 fps).
+     * fotograma por polling.
      */
     frameUrl: string;
     /** JWT del residente: el backend también lo acepta en la query `?token=`. */
@@ -30,12 +30,20 @@ interface CameraFrameViewerProps {
      * no hay transmisión disponible.
      */
     onRefresh?: () => Promise<string | null> | string | null;
-    /** Intervalo entre fotogramas en ms (800 ≈ 1.25 fps). */
+    /**
+     * Pausa tras cada fotograma en ms. La cadencia real es la latencia del
+     * frame (≈1.5-1.9 s con el proxy actual de Cameras Center) + esta pausa.
+     */
     intervalMs?: number;
 }
 
 /** Fotogramas fallidos seguidos antes de pasar al estado de error. */
 const MAX_CONSECUTIVE_ERRORS = 3;
+/**
+ * Si una petición no dispara onLoad/onError en este tiempo se cuenta como
+ * fallo: evita el spinner infinito cuando una petición se queda colgada.
+ */
+const REQUEST_TIMEOUT_MS = 15000;
 
 export const CameraFrameViewer: React.FC<CameraFrameViewerProps> = ({
     frameUrl,
@@ -51,9 +59,13 @@ export const CameraFrameViewer: React.FC<CameraFrameViewerProps> = ({
     const [retrying, setRetrying] = useState(false);
     const errorCountRef = useRef(0);
     const appActiveRef = useRef(true);
+    // Callbacks del <Image> expuestos al bucle de polling vía ref, para que
+    // el efecto no capture closures obsoletas entre renderizaciones.
+    const onLoadRef = useRef<() => void>(() => {});
+    const onErrorRef = useRef<() => void>(() => {});
 
-    // URL absoluta con el JWT y un cache-buster: cada tick es una petición
-    // nueva (el backend responde con Cache-Control: no-store).
+    // URL absoluta con el JWT y un cache-buster: cada fotograma es una
+    // petición nueva (el backend responde con Cache-Control: no-store).
     const buildUri = useCallback(
         (url: string) => {
             const base = Config.API_URL.replace(/\/+$/, '');
@@ -64,29 +76,82 @@ export const CameraFrameViewer: React.FC<CameraFrameViewerProps> = ({
         [token],
     );
 
-    // Polling: pide un fotograma mientras el visor esté montado y sin error
-    // (el componente sólo se monta tras pulsar "Ver transmisión en vivo").
+    // Bucle de polling EN CADENA: sólo se pide el siguiente fotograma cuando
+    // el anterior terminó (onLoad, onError o watchdog). Un intervalo fijo
+    // cancelaba las peticiones en vuelo (cada frame tarda ~1.7 s), el <Image>
+    // nunca disparaba onLoad y el visor se quedaba en "Cargando..." eterno.
     useEffect(() => {
         if (hasError) return;
 
-        const requestFrame = () => {
-            // En segundo plano no se pide nada (batería y espectadores de
-            // Cameras Center): se reanuda solamente al volver a 'active'.
-            if (!appActiveRef.current) return;
-            setFrameUri(buildUri(frameUrl));
+        let stopped = false;
+        let watchdog: ReturnType<typeof setTimeout> | null = null;
+        let next: ReturnType<typeof setTimeout> | null = null;
+
+        const clearWatchdog = () => {
+            if (watchdog) {
+                clearTimeout(watchdog);
+                watchdog = null;
+            }
         };
 
-        requestFrame(); // primer fotograma sin esperar al primer intervalo
-        const id = setInterval(requestFrame, intervalMs);
-        return () => clearInterval(id);
-    }, [hasError, frameUrl, buildUri, intervalMs]);
+        const requestFrame = () => {
+            if (stopped) return;
+            // Sin peticiones en segundo plano: la cadena queda detenida y el
+            // listener de AppState la reanuda al volver a 'active'.
+            if (!appActiveRef.current) return;
+            clearWatchdog();
+            setFrameUri(buildUri(frameUrl));
+            watchdog = setTimeout(() => {
+                // Petición colgada sin onLoad/onError: cuenta como fallo.
+                watchdog = null;
+                handleFail();
+            }, REQUEST_TIMEOUT_MS);
+        };
 
-    useEffect(() => {
+        const scheduleNext = (delay: number) => {
+            if (stopped) return;
+            if (next) clearTimeout(next);
+            next = setTimeout(requestFrame, delay);
+        };
+
+        const handleOk = () => {
+            if (stopped) return;
+            clearWatchdog();
+            errorCountRef.current = 0;
+            setLoaded(true);
+            scheduleNext(intervalMs);
+        };
+
+        const handleFail = () => {
+            if (stopped) return;
+            clearWatchdog();
+            errorCountRef.current += 1;
+            if (errorCountRef.current >= MAX_CONSECUTIVE_ERRORS) {
+                setHasError(true);
+            } else {
+                scheduleNext(intervalMs);
+            }
+        };
+
+        onLoadRef.current = handleOk;
+        onErrorRef.current = handleFail;
+
         const subscription = AppState.addEventListener('change', state => {
             appActiveRef.current = state === 'active';
+            // Reanuda la cadena si quedó detenida en segundo plano (sin
+            // petición en vuelo ni siguiente fotograma programado).
+            if (state === 'active' && !watchdog && !next) scheduleNext(0);
         });
-        return () => subscription.remove();
-    }, []);
+
+        requestFrame(); // primer fotograma sin esperar
+
+        return () => {
+            stopped = true;
+            clearWatchdog();
+            if (next) clearTimeout(next);
+            subscription.remove();
+        };
+    }, [hasError, frameUrl, buildUri, intervalMs]);
 
     // Al cambiar la fuente (reintento) se limpia el estado del intento anterior.
     useEffect(() => {
@@ -94,18 +159,6 @@ export const CameraFrameViewer: React.FC<CameraFrameViewerProps> = ({
         setLoaded(false);
         setHasError(false);
     }, [frameUrl]);
-
-    const handleFrameLoad = () => {
-        errorCountRef.current = 0;
-        setLoaded(true);
-    };
-
-    const handleFrameError = () => {
-        errorCountRef.current += 1;
-        if (errorCountRef.current >= MAX_CONSECUTIVE_ERRORS) {
-            setHasError(true);
-        }
-    };
 
     const handleRetry = async () => {
         if (!onRefresh) {
@@ -161,8 +214,8 @@ export const CameraFrameViewer: React.FC<CameraFrameViewerProps> = ({
                     style={styles.image}
                     resizeMode="contain"
                     accessibilityLabel={serviceName}
-                    onLoad={handleFrameLoad}
-                    onError={handleFrameError}
+                    onLoad={() => onLoadRef.current()}
+                    onError={() => onErrorRef.current()}
                 />
             )}
             {!loaded && (
