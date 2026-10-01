@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
     View,
     Text,
@@ -19,6 +19,12 @@ interface CameraFrameViewerProps {
      * fotograma por polling.
      */
     frameUrl: string;
+    /**
+     * Captura previa (JPEG) que se muestra DETRÁS de los fotogramas en vivo
+     * mientras carga el primero: el residente reconoce la cámara al instante
+     * y no se ve pantalla negra durante el calentamiento del polling.
+     */
+    snapshotUrl?: string | null;
     /** JWT del residente: el backend también lo acepta en la query `?token=`. */
     token: string;
     serviceName: string;
@@ -47,6 +53,7 @@ const REQUEST_TIMEOUT_MS = 15000;
 
 export const CameraFrameViewer: React.FC<CameraFrameViewerProps> = ({
     frameUrl,
+    snapshotUrl,
     token,
     serviceName,
     errorDetail,
@@ -64,6 +71,7 @@ export const CameraFrameViewer: React.FC<CameraFrameViewerProps> = ({
     const [loaded, setLoaded] = useState(false);
     const [hasError, setHasError] = useState(false);
     const [retrying, setRetrying] = useState(false);
+    const [snapshotFailed, setSnapshotFailed] = useState(false);
     const errorCountRef = useRef(0);
     const appActiveRef = useRef(true);
     // Callbacks del <Image> expuestos al bucle de polling vía ref, para que
@@ -81,6 +89,17 @@ export const CameraFrameViewer: React.FC<CameraFrameViewerProps> = ({
             return `${absolute}${sep}token=${encodeURIComponent(token)}&_=${Date.now()}`;
         },
         [token],
+    );
+
+    // Captura previa: se memoriza para que su URI no cambie en cada render
+    // (Date.now() sólo al montar o cambiar la fuente) y no recargue la imagen.
+    useEffect(() => {
+        setSnapshotFailed(false);
+    }, [snapshotUrl]);
+
+    const snapshotUri = useMemo(
+        () => (snapshotUrl && !snapshotFailed ? buildUri(snapshotUrl) : null),
+        [snapshotUrl, snapshotFailed, buildUri],
     );
 
     // Al cambiar la fuente (reintento) se limpia todo el estado del intento
@@ -241,6 +260,17 @@ export const CameraFrameViewer: React.FC<CameraFrameViewerProps> = ({
 
     return (
         <View style={styles.container}>
+            {/* Captura previa como capa de fondo (zIndex bajo las capas del
+                doble buffer): se ve hasta que el primer fotograma la tapa. */}
+            {snapshotUri ? (
+                <Image
+                    source={{ uri: snapshotUri }}
+                    style={[styles.image, { zIndex: 0 }]}
+                    resizeMode="contain"
+                    accessibilityLabel={`${serviceName} (captura)`}
+                    onError={() => setSnapshotFailed(true)}
+                />
+            ) : null}
             {uris.map((uri, idx) =>
                 uri ? (
                     <Image

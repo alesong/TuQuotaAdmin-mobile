@@ -286,6 +286,12 @@ export const MyServicesScreen = ({ navigation, route }: any) => {
     // visor hace polling de este frame en lugar del stream.
     const [cameraFrameUrls, setCameraFrameUrls] = useState<Record<string, string | null>>({});
     const [loadingStreams, setLoadingStreams] = useState<Record<string, boolean>>({});
+    // Captura previa fallida (URI inválida o sin red): se oculta para no
+    // dejar un hueco; no se reintenta en bucle.
+    const [snapshotErrors, setSnapshotErrors] = useState<Record<string, boolean>>({});
+    // Contratos camera-stream ya pedidos al abrir la sección de cámaras:
+    // evitan repetir la precarga de la captura previa en cada render.
+    const requestedContractsRef = useRef<Set<string>>(new Set());
 
     const fetchMyServicesRef = useRef<((options?: { notifyOnError?: boolean }) => Promise<void>) | null>(null);
     const fetchVehiclesRef = useRef<(() => Promise<void>) | null>(null);
@@ -760,6 +766,36 @@ export const MyServicesScreen = ({ navigation, route }: any) => {
                 });
         }
     }, [activeSection, services]);
+
+    // Precarga el contrato de las cámaras Cameras Center al entrar en la
+    // sección: aporta la captura previa (frameUrl) para que el residente
+    // reconozca la cámara sin iniciar la transmisión (mismo flujo que
+    // web-propietarios). Sólo se pide una vez por servicio.
+    useEffect(() => {
+        if (activeSection !== 'cameras' || !token) return;
+        services
+            .filter(s => s.category === 'CAMERAS' && s.status === 'ACTIVE' && s.provider === 'CamerasCenter')
+            .forEach(s => {
+                if (requestedContractsRef.current.has(s.serviceId)) return;
+                requestedContractsRef.current.add(s.serviceId);
+                (async () => {
+                    try {
+                        const response = await fetch(`${API_URL}/resident-services/camera-stream/${s.serviceId}`, {
+                            headers: { 'Authorization': `Bearer ${token}` },
+                        });
+                        const data = response.ok ? await response.json().catch(() => null) : null;
+                        // Sin streamUrl no hay captura útil (mismo criterio que fetchCameraStream).
+                        setCameraFrameUrls(prev => ({
+                            ...prev,
+                            [s.serviceId]: data?.streamUrl ? (data?.frameUrl || null) : null,
+                        }));
+                    } catch {
+                        // Fallo de red: se permite reintentar en la próxima entrada.
+                        requestedContractsRef.current.delete(s.serviceId);
+                    }
+                })();
+            });
+    }, [activeSection, services, token]);
 
     // Generar QR image cuando cambia qrCode
     useEffect(() => {
@@ -1383,7 +1419,12 @@ export const MyServicesScreen = ({ navigation, route }: any) => {
                             CAMERAS SECTION
                            ========================================== */}
                         {activeSection === 'cameras' && (
-                            services.filter(s => s.category === 'CAMERAS').map(s => (
+                            services.filter(s => s.category === 'CAMERAS').map(s => {
+                                const snapPath = !snapshotErrors[s.serviceId] ? cameraFrameUrls[s.serviceId] : null;
+                                const snapUri = snapPath
+                                    ? `${API_URL.replace(/\/+$/, '')}${snapPath}?token=${encodeURIComponent(token || '')}`
+                                    : null;
+                                return (
                                 <View key={s.serviceId} style={styles.serviceCard}>
                                     <View style={styles.cardHeader}>
                                         <Video size={22} color={Colors.primary} />
@@ -1401,14 +1442,33 @@ export const MyServicesScreen = ({ navigation, route }: any) => {
                                                 {s.streamUrl ? (
                                                     <CameraStreamViewer streamUrl={s.streamUrl} serviceName={s.serviceName} />
                                                 ) : loadingStreams[s.serviceId] ? (
-                                                    <View style={styles.cameraLoadingContainer}>
-                                                        <ActivityIndicator size="small" color={Colors.primary} />
-                                                        <Text style={styles.cameraLoadingText}>Cargando stream...</Text>
-                                                    </View>
+                                                    snapUri ? (
+                                                        // Con captura: mismo marco de 200 px que el visor y sólo se
+                                                        // superpone el spinner, así no hay salto de tamaño al iniciar.
+                                                        <View style={styles.cameraSnapshotContainer}>
+                                                            <Image
+                                                                source={{ uri: snapUri }}
+                                                                style={styles.cameraSnapshotImage}
+                                                                resizeMode="contain"
+                                                                accessibilityLabel={`Captura de ${s.serviceName}`}
+                                                                onError={() => setSnapshotErrors(prev => ({ ...prev, [s.serviceId]: true }))}
+                                                            />
+                                                            <View style={styles.cameraSnapshotOverlay}>
+                                                                <ActivityIndicator size="small" color="#ffffff" />
+                                                                <Text style={styles.cameraSnapshotOverlayText}>Cargando transmisión...</Text>
+                                                            </View>
+                                                        </View>
+                                                    ) : (
+                                                        <View style={styles.cameraLoadingContainer}>
+                                                            <ActivityIndicator size="small" color={Colors.primary} />
+                                                            <Text style={styles.cameraLoadingText}>Cargando stream...</Text>
+                                                        </View>
+                                                    )
                                                 ) : cameraStreams[s.serviceId] ? (
                                                     cameraStreamTypes[s.serviceId] === 'mjpeg' ? (
                                                         <CameraFrameViewer
                                                             frameUrl={cameraFrameUrls[s.serviceId] || cameraStreams[s.serviceId]!}
+                                                            snapshotUrl={snapUri}
                                                             token={token || ''}
                                                             serviceName={s.serviceName}
                                                             errorDetail={cameraStreamErrors[s.serviceId] || null}
@@ -1435,12 +1495,27 @@ export const MyServicesScreen = ({ navigation, route }: any) => {
                                                         </TouchableOpacity>
                                                     </View>
                                                 ) : (
-                                                    <TouchableOpacity
-                                                        style={styles.cameraActivateBtn}
-                                                        onPress={() => fetchCameraStream(s.serviceId)}
-                                                    >
-                                                        <Text style={styles.cameraActivateBtnText}>Ver transmisión en vivo</Text>
-                                                    </TouchableOpacity>
+                                                    <>
+                                                        {snapUri && (
+                                                            // Captura previa: reconoce la cámara ANTES de iniciar la
+                                                            // transmisión, en el mismo marco de 200 px del visor.
+                                                            <View style={styles.cameraSnapshotContainer}>
+                                                                <Image
+                                                                    source={{ uri: snapUri }}
+                                                                    style={styles.cameraSnapshotImage}
+                                                                    resizeMode="contain"
+                                                                    accessibilityLabel={`Captura de ${s.serviceName}`}
+                                                                    onError={() => setSnapshotErrors(prev => ({ ...prev, [s.serviceId]: true }))}
+                                                                />
+                                                            </View>
+                                                        )}
+                                                        <TouchableOpacity
+                                                            style={styles.cameraActivateBtn}
+                                                            onPress={() => fetchCameraStream(s.serviceId)}
+                                                        >
+                                                            <Text style={styles.cameraActivateBtnText}>Ver transmisión en vivo</Text>
+                                                        </TouchableOpacity>
+                                                    </>
                                                 )}
                                                 {(s.provider === 'Ezviz' || s.provider === 'EZVIZ') && !!s.deviceSerial && (
                                                     <TouchableOpacity
@@ -1460,7 +1535,8 @@ export const MyServicesScreen = ({ navigation, route }: any) => {
                                         )}
                                     </View>
                                 </View>
-                            ))
+                                );
+                            })
                         )}
 
                         {/* ==========================================
@@ -2411,6 +2487,30 @@ const styles = StyleSheet.create({
     cameraLoadingText: {
         color: '#94a3b8',
         fontSize: 13,
+        marginTop: 8,
+    },
+    // Captura previa con el mismo marco que CameraFrameViewer (200 px): la
+    // tarjeta no cambia de tamaño al pasar de captura a transmisión en vivo.
+    cameraSnapshotContainer: {
+        height: 200,
+        borderRadius: 12,
+        overflow: 'hidden',
+        backgroundColor: '#0f172a',
+        position: 'relative',
+    },
+    cameraSnapshotImage: {
+        width: '100%',
+        height: '100%',
+    },
+    cameraSnapshotOverlay: {
+        ...StyleSheet.absoluteFill,
+        justifyContent: 'center',
+        alignItems: 'center',
+        backgroundColor: 'rgba(0,0,0,0.5)',
+    },
+    cameraSnapshotOverlayText: {
+        color: '#ffffff',
+        fontSize: 12,
         marginTop: 8,
     },
     cameraActivateBtn: {
