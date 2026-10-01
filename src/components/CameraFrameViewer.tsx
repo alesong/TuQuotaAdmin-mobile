@@ -72,6 +72,17 @@ export const CameraFrameViewer: React.FC<CameraFrameViewerProps> = ({
     const [hasError, setHasError] = useState(false);
     const [retrying, setRetrying] = useState(false);
     const [snapshotFailed, setSnapshotFailed] = useState(false);
+    // Último fotograma cargado con éxito: si hace más de 10 s que no llega
+    // ninguno, se pinta SIN SEÑAL aunque la cadena de polling siga viva
+    // (peticiones lentas/colgadas se detectan aquí, antes de los 3 reintentos
+    // del estado de error).
+    const lastOkRef = useRef(Date.now());
+    const [activityStale, setActivityStale] = useState(false);
+    // Resultado de la sonda de frescura (X-Frame-Age-Ms): false = la API no
+    // responde o la cámara lleva >10 s sin producir fotogramas nuevos.
+    const [fresh, setFresh] = useState<boolean | null>(null);
+    // Al subirlo se reinicia la cadena de polling (botón "Reiniciar").
+    const [restartNonce, setRestartNonce] = useState(0);
     const errorCountRef = useRef(0);
     const appActiveRef = useRef(true);
     // Callbacks del <Image> expuestos al bucle de polling vía ref, para que
@@ -109,6 +120,7 @@ export const CameraFrameViewer: React.FC<CameraFrameViewerProps> = ({
     useEffect(() => {
         errorCountRef.current = 0;
         backRef.current = 0;
+        lastOkRef.current = Date.now();
         setUris([null, null]);
         setFrontIdx(0);
         setLoaded(false);
@@ -167,6 +179,7 @@ export const CameraFrameViewer: React.FC<CameraFrameViewerProps> = ({
             if (layer !== backRef.current) return;
             clearWatchdog();
             errorCountRef.current = 0;
+            lastOkRef.current = Date.now();
             // Intercambio de capas: la recién cargada pasa al frente (ya
             // tiene el bitmap decodificado, el cambio es instantáneo) y la
             // anterior queda de fondo para recibir el próximo fotograma.
@@ -197,9 +210,14 @@ export const CameraFrameViewer: React.FC<CameraFrameViewerProps> = ({
 
         const subscription = AppState.addEventListener('change', state => {
             appActiveRef.current = state === 'active';
-            // Reanuda la cadena si quedó detenida en segundo plano (sin
-            // petición en vuelo ni siguiente fotograma programado).
-            if (state === 'active' && !watchdog && !next) scheduleNext(0);
+            if (state === 'active') {
+                // Margen al volver de segundo plano: la cadena tarda unos
+                // fotogramas en reanudarse y el badge no debe parpadear.
+                lastOkRef.current = Date.now();
+                // Reanuda la cadena si quedó detenida en segundo plano (sin
+                // petición en vuelo ni siguiente fotograma programado).
+                if (!watchdog && !next) scheduleNext(0);
+            }
         });
 
         requestFrame(); // primer fotograma sin esperar
@@ -210,7 +228,66 @@ export const CameraFrameViewer: React.FC<CameraFrameViewerProps> = ({
             if (next) clearTimeout(next);
             subscription.remove();
         };
-    }, [hasError, frameUrl, buildUri, intervalMs]);
+    }, [hasError, frameUrl, buildUri, intervalMs, restartNonce]);
+
+    // Sonda de frescura: cada 5 s pide el fotograma y lee X-Frame-Age-Ms.
+    // Un 200 con la cámara muerta devuelve el último frame para siempre (edad
+    // creciente) y el polling seguiría "funcionando" sobre una imagen
+    // congelada: esta sonda es la que marca SIN SEÑAL en ese caso.
+    const STALE_MS = 10_000;
+    useEffect(() => {
+        if (hasError) return;
+        let cancelled = false;
+        const probe = async () => {
+            let ok = false;
+            try {
+                const ctrl = new AbortController();
+                const timer = setTimeout(() => ctrl.abort(), 8000);
+                const resp = await fetch(buildUri(frameUrl), { signal: ctrl.signal });
+                clearTimeout(timer);
+                if (resp.ok) {
+                    const raw = resp.headers.get('x-frame-age-ms');
+                    const age = raw === null ? NaN : Number(raw);
+                    // Cabecera ausente → sólo vale que responda 200.
+                    ok = Number.isNaN(age) || age <= STALE_MS;
+                    resp.body?.cancel?.().catch(() => undefined);
+                }
+            } catch {
+                ok = false;
+            }
+            if (!cancelled) setFresh(ok);
+        };
+        probe();
+        const iv = setInterval(probe, 5000);
+        return () => {
+            cancelled = true;
+            clearInterval(iv);
+        };
+    }, [frameUrl, buildUri, hasError, restartNonce]);
+
+    // Vigilancia de actividad: si entre fotogramas pasan más de 10 s, la
+    // cadena está colgada o muy lenta → SIN SEÑAL sin esperar a los 3 fallos
+    // consecutivos del estado de error (~45 s en el peor caso).
+    useEffect(() => {
+        const iv = setInterval(() => {
+            const stale = Date.now() - lastOkRef.current > STALE_MS;
+            setActivityStale(prev => (prev === stale ? prev : stale));
+        }, 2000);
+        return () => clearInterval(iv);
+    }, []);
+
+    // Reinicio manual desde el badge: limpia contadores, reanuda la cadena de
+    // polling de inmediato y refresca el contrato por si cambió la URL.
+    const handleRestart = () => {
+        errorCountRef.current = 0;
+        lastOkRef.current = Date.now();
+        setActivityStale(false);
+        setFresh(null);
+        setHasError(false);
+        setRetrying(false);
+        setRestartNonce(n => n + 1);
+        void onRefresh?.();
+    };
 
     const handleRetry = async () => {
         if (!onRefresh) {
@@ -237,6 +314,9 @@ export const CameraFrameViewer: React.FC<CameraFrameViewerProps> = ({
             setRetrying(false);
         }
     };
+
+    // Señal de corte: sin fotograma reciente o sonda con la cámara fría.
+    const signalOff = activityStale || fresh === false;
 
     if (hasError) {
         return (
@@ -290,6 +370,23 @@ export const CameraFrameViewer: React.FC<CameraFrameViewerProps> = ({
                     <Text style={styles.loadingText}>Cargando transmisión...</Text>
                 </View>
             )}
+            {/* Badge de salud: punto verde EN VIVO / punto rojo SIN SEÑAL con
+                "Reiniciar", para que un corte silencioso sea visible. */}
+            {loaded && (
+                <View style={[styles.badge, signalOff ? styles.badgeOff : null]}>
+                    <View style={[styles.badgeDot, signalOff ? styles.badgeDotOff : styles.badgeDotLive]} />
+                    <Text style={styles.badgeText}>{signalOff ? 'SIN SEÑAL' : 'EN VIVO'}</Text>
+                    {signalOff && (
+                        <TouchableOpacity
+                            style={styles.badgeRestart}
+                            onPress={handleRestart}
+                            accessibilityLabel="Reiniciar transmisión"
+                        >
+                            <Text style={styles.badgeRestartText}>Reiniciar</Text>
+                        </TouchableOpacity>
+                    )}
+                </View>
+            )}
         </View>
     );
 };
@@ -321,6 +418,51 @@ const styles = StyleSheet.create({
         color: '#ffffff',
         fontSize: 12,
         marginTop: 8,
+    },
+    // Badge de salud del stream (punto + texto), por encima de las capas.
+    badge: {
+        position: 'absolute',
+        top: 8,
+        left: 8,
+        zIndex: 4,
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: 'rgba(15, 23, 42, 0.75)',
+        borderRadius: 999,
+        paddingVertical: 4,
+        paddingHorizontal: 10,
+    },
+    badgeOff: {
+        backgroundColor: 'rgba(127, 29, 29, 0.92)',
+    },
+    badgeDot: {
+        width: 8,
+        height: 8,
+        borderRadius: 4,
+        marginRight: 6,
+    },
+    badgeDotLive: {
+        backgroundColor: '#22c55e',
+    },
+    badgeDotOff: {
+        backgroundColor: '#fecaca',
+    },
+    badgeText: {
+        color: '#ffffff',
+        fontSize: 11,
+        fontWeight: 'bold',
+    },
+    badgeRestart: {
+        marginLeft: 8,
+        backgroundColor: '#ef4444',
+        borderRadius: 999,
+        paddingVertical: 2,
+        paddingHorizontal: 8,
+    },
+    badgeRestartText: {
+        color: '#ffffff',
+        fontSize: 11,
+        fontWeight: 'bold',
     },
     errorContainer: {
         minHeight: 150,
