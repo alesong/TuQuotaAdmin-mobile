@@ -15,6 +15,11 @@ interface CameraStreamViewerProps {
      * Debe resolver con la nueva URL, o null si ya no hay stream disponible.
      */
     onRefresh?: () => Promise<string | null> | string | null;
+    /**
+     * Arranca el video de inmediato, sin el botón previo (galería de clips:
+     * el usuario ya tocó la miniatura para verlo).
+     */
+    autoPlay?: boolean;
 }
 
 export const CameraStreamViewer: React.FC<CameraStreamViewerProps> = ({
@@ -22,8 +27,9 @@ export const CameraStreamViewer: React.FC<CameraStreamViewerProps> = ({
     serviceName,
     errorDetail,
     onRefresh,
+    autoPlay = false,
 }) => {
-    const [showVideo, setShowVideo] = useState(false);
+    const [showVideo, setShowVideo] = useState(autoPlay);
     const [hasError, setHasError] = useState(false);
     const [retrying, setRetrying] = useState(false);
 

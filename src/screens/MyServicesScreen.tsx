@@ -36,6 +36,7 @@ import {
     Bell,
     BellRing,
     X,
+    Play,
     Check,
     CheckCheck,
     ChevronRight,
@@ -292,6 +293,14 @@ export const MyServicesScreen = ({ navigation, route }: any) => {
     // Contratos camera-stream ya pedidos al abrir la sección de cámaras:
     // evitan repetir la precarga de la captura previa en cada render.
     const requestedContractsRef = useRef<Set<string>>(new Set());
+    // Clips recientes por cámara (galería bajo el vivo): sólo metadatos desde
+    // la API; el MP4 y la miniatura salen directo de Cloudinary (cero video
+    // por Render). Se piden una vez por sesión de visionado.
+    const [cameraClips, setCameraClips] = useState<
+        Record<string, Array<{ id: string; at: number; createdAt: string; score: number | null; snapshotUrl: string | null; clipUrl: string }>>
+    >({});
+    const [clipPlayer, setClipPlayer] = useState<{ serviceId: string; clipUrl: string } | null>(null);
+    const requestedClipsRef = useRef<Set<string>>(new Set());
 
     const fetchMyServicesRef = useRef<((options?: { notifyOnError?: boolean }) => Promise<void>) | null>(null);
     const fetchVehiclesRef = useRef<(() => Promise<void>) | null>(null);
@@ -796,6 +805,35 @@ export const MyServicesScreen = ({ navigation, route }: any) => {
                 })();
             });
     }, [activeSection, services, token]);
+
+    // Galería de clips: una sola carga por sesión de visionado (sólo JSON;
+    // el video sale directo de Cloudinary al tocar la miniatura).
+    const fetchCameraClips = async (serviceId: string) => {
+        try {
+            const response = await fetch(
+                `${API_URL}/resident-services/cameras-center/clips/${serviceId}?limit=12`,
+                { headers: { 'Authorization': `Bearer ${token}` } }
+            );
+            const data = response.ok ? await response.json().catch(() => null) : null;
+            setCameraClips(prev => ({
+                ...prev,
+                [serviceId]: Array.isArray(data?.clips) ? data.clips : [],
+            }));
+        } catch {
+            setCameraClips(prev => ({ ...prev, [serviceId]: [] }));
+        }
+    };
+
+    useEffect(() => {
+        if (activeSection !== 'cameras' || !token) return;
+        Object.keys(cameraStreams).forEach(id => {
+            if (cameraStreams[id] && !requestedClipsRef.current.has(id)) {
+                requestedClipsRef.current.add(id);
+                void fetchCameraClips(id);
+            }
+        });
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [activeSection, cameraStreams, token]);
 
     // Generar QR image cuando cambia qrCode
     useEffect(() => {
@@ -1525,6 +1563,70 @@ export const MyServicesScreen = ({ navigation, route }: any) => {
                                                         <Smartphone size={16} color={Colors.primary} style={{ marginRight: 8 }} />
                                                         <Text style={styles.openEzvizBtnText}>Abrir en App EZVIZ</Text>
                                                     </TouchableOpacity>
+                                                )}
+                                                {cameraStreams[s.serviceId] && (cameraClips[s.serviceId]?.length ?? 0) > 0 && (
+                                                    <View style={styles.clipsBlock}>
+                                                        <Text style={styles.clipsLabel}>Clips recientes</Text>
+                                                        <View style={styles.clipsGrid}>
+                                                            {cameraClips[s.serviceId].map(clip => (
+                                                                <TouchableOpacity
+                                                                    key={clip.id}
+                                                                    style={styles.clipThumb}
+                                                                    onPress={() => setClipPlayer({ serviceId: s.serviceId, clipUrl: clip.clipUrl })}
+                                                                    accessibilityLabel={`Ver clip del ${new Date(clip.at).toLocaleString('es-CO')}`}
+                                                                >
+                                                                    {clip.snapshotUrl ? (
+                                                                        <Image
+                                                                            source={{ uri: clip.snapshotUrl }}
+                                                                            style={styles.clipThumbImage}
+                                                                            resizeMode="cover"
+                                                                        />
+                                                                    ) : (
+                                                                        <View style={[styles.clipThumbImage, styles.clipThumbFallback]}>
+                                                                            <Play size={20} color="#94a3b8" />
+                                                                        </View>
+                                                                    )}
+                                                                    <View style={styles.clipPlayOverlay}>
+                                                                        <Play size={18} color="#ffffff" />
+                                                                    </View>
+                                                                    <Text style={styles.clipCaption}>
+                                                                        {new Date(clip.at).toLocaleString('es-CO', {
+                                                                            day: '2-digit',
+                                                                            month: '2-digit',
+                                                                            hour: '2-digit',
+                                                                            minute: '2-digit',
+                                                                        })}
+                                                                    </Text>
+                                                                </TouchableOpacity>
+                                                            ))}
+                                                        </View>
+                                                    </View>
+                                                )}
+                                                {clipPlayer && clipPlayer.serviceId === s.serviceId && (
+                                                    <Modal
+                                                        visible
+                                                        transparent
+                                                        animationType="fade"
+                                                        onRequestClose={() => setClipPlayer(null)}
+                                                    >
+                                                        <View style={styles.clipModalBackdrop}>
+                                                            <View style={styles.clipModalBox}>
+                                                                <CameraStreamViewer
+                                                                    streamUrl={clipPlayer.clipUrl}
+                                                                    serviceName={s.serviceName}
+                                                                    autoPlay
+                                                                />
+                                                                <TouchableOpacity
+                                                                    style={styles.clipModalClose}
+                                                                    onPress={() => setClipPlayer(null)}
+                                                                    accessibilityLabel="Cerrar video"
+                                                                >
+                                                                    <X size={16} color="#ffffff" />
+                                                                    <Text style={styles.clipModalCloseText}>Cerrar</Text>
+                                                                </TouchableOpacity>
+                                                            </View>
+                                                        </View>
+                                                    </Modal>
                                                 )}
                                             </>
                                         ) : (
@@ -2572,6 +2674,78 @@ const styles = StyleSheet.create({
     },
     openEzvizBtnText: {
         color: Colors.primary,
+        fontSize: 13,
+        fontWeight: 'bold',
+    },
+    // Galería de clips recientes (3 columnas bajo el vivo; miniaturas y MP4
+    // directos de Cloudinary, cero video por Render).
+    clipsBlock: {
+        marginTop: 10,
+    },
+    clipsLabel: {
+        color: '#cbd5e1',
+        fontSize: 12,
+        fontWeight: 'bold',
+        marginBottom: 6,
+    },
+    clipsGrid: {
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        justifyContent: 'space-between',
+    },
+    clipThumb: {
+        width: '32%',
+        marginBottom: 8,
+        borderRadius: 8,
+        overflow: 'hidden',
+        backgroundColor: '#0f172a',
+        position: 'relative',
+    },
+    clipThumbImage: {
+        width: '100%',
+        aspectRatio: 16 / 9,
+    },
+    clipThumbFallback: {
+        justifyContent: 'center',
+        alignItems: 'center',
+        backgroundColor: '#1e293b',
+    },
+    clipPlayOverlay: {
+        ...StyleSheet.absoluteFill,
+        justifyContent: 'center',
+        alignItems: 'center',
+        backgroundColor: 'rgba(0,0,0,0.25)',
+    },
+    clipCaption: {
+        color: '#ffffff',
+        fontSize: 9,
+        textAlign: 'center',
+        backgroundColor: 'rgba(0,0,0,0.55)',
+        paddingVertical: 2,
+    },
+    clipModalBackdrop: {
+        flex: 1,
+        backgroundColor: 'rgba(0,0,0,0.85)',
+        justifyContent: 'center',
+        alignItems: 'center',
+        padding: 16,
+    },
+    clipModalBox: {
+        width: '100%',
+    },
+    clipModalClose: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        marginTop: 12,
+        paddingVertical: 10,
+        borderRadius: 999,
+        borderWidth: 1,
+        borderColor: 'rgba(255,255,255,0.4)',
+        gap: 6,
+    },
+    clipModalCloseText: {
+        color: '#ffffff',
         fontSize: 13,
         fontWeight: 'bold',
     },
