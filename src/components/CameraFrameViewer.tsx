@@ -10,6 +10,7 @@ import {
 } from 'react-native';
 import { Colors } from '../constants/Colors';
 import { Config } from '../constants/Config';
+import { Pause, Play } from 'lucide-react-native';
 
 interface CameraFrameViewerProps {
     /**
@@ -50,6 +51,12 @@ const MAX_CONSECUTIVE_ERRORS = 3;
  * fallo: evita el spinner infinito cuando una petición se queda colgada.
  */
 const REQUEST_TIMEOUT_MS = 15000;
+/**
+ * Pausa automática: a los 2 minutos de transmisión continua se corta el
+ * polling y la sonda (una pantalla olvidada deja de tirar ~16 KB/s) y hay
+ * que pulsar "Reanudar" para volver a consumir.
+ */
+const AUTO_PAUSE_MS = 120_000;
 
 export const CameraFrameViewer: React.FC<CameraFrameViewerProps> = ({
     frameUrl,
@@ -83,6 +90,11 @@ export const CameraFrameViewer: React.FC<CameraFrameViewerProps> = ({
     const [fresh, setFresh] = useState<boolean | null>(null);
     // Al subirlo se reinicia la cadena de polling (botón "Reiniciar").
     const [restartNonce, setRestartNonce] = useState(0);
+    // Pausa automática a los 2 min: con `paused` en las dependencias de los
+    // efectos de polling y sonda, ponerlo a true los detiene (cleanup) y
+    // ponerlo a false los vuelve a lanzar (arranque inmediato).
+    const [paused, setPaused] = useState(false);
+    const pauseDeadlineRef = useRef(Date.now() + AUTO_PAUSE_MS);
     const errorCountRef = useRef(0);
     const appActiveRef = useRef(true);
     // Callbacks del <Image> expuestos al bucle de polling vía ref, para que
@@ -132,7 +144,7 @@ export const CameraFrameViewer: React.FC<CameraFrameViewerProps> = ({
     // cancelaba las peticiones en vuelo (cada frame tarda ~1.7 s), el <Image>
     // nunca disparaba onLoad y el visor se quedaba en "Cargando..." eterno.
     useEffect(() => {
-        if (hasError) return;
+        if (hasError || paused) return;
 
         let stopped = false;
         let watchdog: ReturnType<typeof setTimeout> | null = null;
@@ -228,29 +240,29 @@ export const CameraFrameViewer: React.FC<CameraFrameViewerProps> = ({
             if (next) clearTimeout(next);
             subscription.remove();
         };
-    }, [hasError, frameUrl, buildUri, intervalMs, restartNonce]);
+    }, [hasError, paused, frameUrl, buildUri, intervalMs, restartNonce]);
 
-    // Sonda de frescura: cada 5 s pide el fotograma y lee X-Frame-Age-Ms.
-    // Un 200 con la cámara muerta devuelve el último frame para siempre (edad
-    // creciente) y el polling seguiría "funcionando" sobre una imagen
-    // congelada: esta sonda es la que marca SIN SEÑAL en ese caso.
+    // Sonda de frescura: cada 5 s pide el fotograma (HEAD: sólo interesan
+    // las cabeceras, sin cuerpo se ahorra el JPEG completo por sondeo) y lee
+    // X-Frame-Age-Ms. Un 200 con la cámara muerta devuelve el último frame
+    // para siempre (edad creciente) y el polling seguiría "funcionando" sobre
+    // una imagen congelada: esta sonda es la que marca SIN SEÑAL en ese caso.
     const STALE_MS = 10_000;
     useEffect(() => {
-        if (hasError) return;
+        if (hasError || paused) return;
         let cancelled = false;
         const probe = async () => {
             let ok = false;
             try {
                 const ctrl = new AbortController();
                 const timer = setTimeout(() => ctrl.abort(), 8000);
-                const resp = await fetch(buildUri(frameUrl), { signal: ctrl.signal });
+                const resp = await fetch(buildUri(frameUrl), { method: 'HEAD', signal: ctrl.signal });
                 clearTimeout(timer);
                 if (resp.ok) {
                     const raw = resp.headers.get('x-frame-age-ms');
                     const age = raw === null ? NaN : Number(raw);
                     // Cabecera ausente → sólo vale que responda 200.
                     ok = Number.isNaN(age) || age <= STALE_MS;
-                    resp.body?.cancel?.().catch(() => undefined);
                 }
             } catch {
                 ok = false;
@@ -263,7 +275,7 @@ export const CameraFrameViewer: React.FC<CameraFrameViewerProps> = ({
             cancelled = true;
             clearInterval(iv);
         };
-    }, [frameUrl, buildUri, hasError, restartNonce]);
+    }, [frameUrl, buildUri, hasError, paused, restartNonce]);
 
     // Vigilancia de actividad: si entre fotogramas pasan más de 10 s, la
     // cadena está colgada o muy lenta → SIN SEÑAL sin esperar a los 3 fallos
@@ -276,6 +288,18 @@ export const CameraFrameViewer: React.FC<CameraFrameViewerProps> = ({
         return () => clearInterval(iv);
     }, []);
 
+    // Cuenta atrás de la pausa automática: revisa el plazo cada 2 s y, si se
+    // venció, pone `paused` (los efectos de polling y sonda salen solos por
+    // sus dependencias). Mientras está pausado el efecto no corre, así que la
+    // bandera no se repite.
+    useEffect(() => {
+        if (paused) return;
+        const iv = setInterval(() => {
+            if (Date.now() >= pauseDeadlineRef.current) setPaused(true);
+        }, 2000);
+        return () => clearInterval(iv);
+    }, [paused]);
+
     // Reinicio manual desde el badge: limpia contadores, reanuda la cadena de
     // polling de inmediato y refresca el contrato por si cambió la URL.
     const handleRestart = () => {
@@ -287,6 +311,17 @@ export const CameraFrameViewer: React.FC<CameraFrameViewerProps> = ({
         setRetrying(false);
         setRestartNonce(n => n + 1);
         void onRefresh?.();
+    };
+
+    // Reanudación manual tras la pausa automática: plazo nuevo de 2 minutos,
+    // indicadores a cero y `paused=false` que remonta polling y sonda.
+    const handleResume = () => {
+        pauseDeadlineRef.current = Date.now() + AUTO_PAUSE_MS;
+        errorCountRef.current = 0;
+        lastOkRef.current = Date.now();
+        setActivityStale(false);
+        setFresh(null);
+        setPaused(false);
     };
 
     const handleRetry = async () => {
@@ -364,15 +399,16 @@ export const CameraFrameViewer: React.FC<CameraFrameViewerProps> = ({
                     />
                 ) : null
             )}
-            {!loaded && (
+            {!loaded && !paused && (
                 <View style={[styles.loadingOverlay, { zIndex: 3 }]}>
                     <ActivityIndicator size="small" color="#ffffff" />
                     <Text style={styles.loadingText}>Cargando transmisión...</Text>
                 </View>
             )}
             {/* Badge de salud: punto verde EN VIVO / punto rojo SIN SEÑAL con
-                "Reiniciar", para que un corte silencioso sea visible. */}
-            {loaded && (
+                "Reiniciar", para que un corte silencioso sea visible. Oculto
+                mientras dura la pausa (el overlay lo sustituye). */}
+            {loaded && !paused && (
                 <View style={[styles.badge, signalOff ? styles.badgeOff : null]}>
                     <View style={[styles.badgeDot, signalOff ? styles.badgeDotOff : styles.badgeDotLive]} />
                     <Text style={styles.badgeText}>{signalOff ? 'SIN SEÑAL' : 'EN VIVO'}</Text>
@@ -385,6 +421,25 @@ export const CameraFrameViewer: React.FC<CameraFrameViewerProps> = ({
                             <Text style={styles.badgeRestartText}>Reiniciar</Text>
                         </TouchableOpacity>
                     )}
+                </View>
+            )}
+            {/* Pausa automática a los 2 min: velo sobre el último fotograma
+                (sigue reconociéndose la cámara) y el botón Reanudar. */}
+            {paused && (
+                <View style={styles.pausedOverlay}>
+                    <Pause size={26} color="#ffffff" />
+                    <Text style={styles.pausedTitle}>Transmisión pausada</Text>
+                    <Text style={styles.pausedHint}>
+                        Se detuvo a los 2 minutos para no consumir datos sin que estés mirando.
+                    </Text>
+                    <TouchableOpacity
+                        style={styles.pausedBtn}
+                        onPress={handleResume}
+                        accessibilityLabel="Reanudar transmisión"
+                    >
+                        <Play size={14} color="#ffffff" />
+                        <Text style={styles.pausedBtnText}>Reanudar transmisión</Text>
+                    </TouchableOpacity>
                 </View>
             )}
         </View>
@@ -462,6 +517,44 @@ const styles = StyleSheet.create({
     badgeRestartText: {
         color: '#ffffff',
         fontSize: 11,
+        fontWeight: 'bold',
+    },
+    // Overlay de pausa automática (por encima del badge: zIndex 5).
+    pausedOverlay: {
+        ...StyleSheet.absoluteFill,
+        zIndex: 5,
+        justifyContent: 'center',
+        alignItems: 'center',
+        paddingHorizontal: 20,
+        backgroundColor: 'rgba(15, 23, 42, 0.72)',
+    },
+    pausedTitle: {
+        color: '#ffffff',
+        fontSize: 14,
+        fontWeight: 'bold',
+        marginTop: 10,
+        textAlign: 'center',
+    },
+    pausedHint: {
+        color: 'rgba(255,255,255,0.78)',
+        fontSize: 12,
+        textAlign: 'center',
+        marginTop: 6,
+        maxWidth: 260,
+    },
+    pausedBtn: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+        backgroundColor: '#2563eb',
+        paddingVertical: 9,
+        paddingHorizontal: 18,
+        borderRadius: 999,
+        marginTop: 12,
+    },
+    pausedBtnText: {
+        color: '#ffffff',
+        fontSize: 13,
         fontWeight: 'bold',
     },
     errorContainer: {
