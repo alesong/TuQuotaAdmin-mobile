@@ -88,6 +88,11 @@ export const CameraFrameViewer: React.FC<CameraFrameViewerProps> = ({
     // Resultado de la sonda de frescura (X-Frame-Age-Ms): false = la API no
     // responde o la cámara lleva >10 s sin producir fotogramas nuevos.
     const [fresh, setFresh] = useState<boolean | null>(null);
+    // Telemetría real para el overlay discreto: resolución del JPEG
+    // (cabecera X-Frame-Size) y fps medidos en el propio polling.
+    const [frameSize, setFrameSize] = useState<string | null>(null);
+    const [measuredFps, setMeasuredFps] = useState(0);
+    const frameTimesRef = useRef<number[]>([]);
     // Al subirlo se reinicia la cadena de polling (botón "Reiniciar").
     const [restartNonce, setRestartNonce] = useState(0);
     // Pausa automática a los 2 min: con `paused` en las dependencias de los
@@ -133,6 +138,9 @@ export const CameraFrameViewer: React.FC<CameraFrameViewerProps> = ({
         errorCountRef.current = 0;
         backRef.current = 0;
         lastOkRef.current = Date.now();
+        frameTimesRef.current = [];
+        setMeasuredFps(0);
+        setFrameSize(null);
         setUris([null, null]);
         setFrontIdx(0);
         setLoaded(false);
@@ -192,6 +200,8 @@ export const CameraFrameViewer: React.FC<CameraFrameViewerProps> = ({
             clearWatchdog();
             errorCountRef.current = 0;
             lastOkRef.current = Date.now();
+            // Marca para el medidor de fps reales (ventana deslizante).
+            frameTimesRef.current.push(Date.now());
             // Intercambio de capas: la recién cargada pasa al frente (ya
             // tiene el bitmap decodificado, el cambio es instantáneo) y la
             // anterior queda de fondo para recibir el próximo fotograma.
@@ -253,6 +263,7 @@ export const CameraFrameViewer: React.FC<CameraFrameViewerProps> = ({
         let cancelled = false;
         const probe = async () => {
             let ok = false;
+            let size: string | null = null;
             try {
                 const ctrl = new AbortController();
                 const timer = setTimeout(() => ctrl.abort(), 8000);
@@ -263,11 +274,15 @@ export const CameraFrameViewer: React.FC<CameraFrameViewerProps> = ({
                     const age = raw === null ? NaN : Number(raw);
                     // Cabecera ausente → sólo vale que responda 200.
                     ok = Number.isNaN(age) || age <= STALE_MS;
+                    size = resp.headers.get('x-frame-size');
                 }
             } catch {
                 ok = false;
             }
-            if (!cancelled) setFresh(ok);
+            if (!cancelled) {
+                setFresh(ok);
+                setFrameSize(size);
+            }
         };
         probe();
         const iv = setInterval(probe, 5000);
@@ -276,6 +291,18 @@ export const CameraFrameViewer: React.FC<CameraFrameViewerProps> = ({
             clearInterval(iv);
         };
     }, [frameUrl, buildUri, hasError, paused, restartNonce]);
+
+    // FPS reales recibidos: fotogramas completados en ventana de 5 s.
+    useEffect(() => {
+        const iv = setInterval(() => {
+            const now = Date.now();
+            const times = frameTimesRef.current.filter(t => now - t <= 5000);
+            frameTimesRef.current = times;
+            const fps = Math.round((times.length / 5) * 10) / 10;
+            setMeasuredFps(prev => (prev === fps ? prev : fps));
+        }, 2000);
+        return () => clearInterval(iv);
+    }, []);
 
     // Vigilancia de actividad: si entre fotogramas pasan más de 10 s, la
     // cadena está colgada o muy lenta → SIN SEÑAL sin esperar a los 3 fallos
@@ -305,6 +332,8 @@ export const CameraFrameViewer: React.FC<CameraFrameViewerProps> = ({
     const handleRestart = () => {
         errorCountRef.current = 0;
         lastOkRef.current = Date.now();
+        frameTimesRef.current = [];
+        setMeasuredFps(0);
         setActivityStale(false);
         setFresh(null);
         setHasError(false);
@@ -319,6 +348,8 @@ export const CameraFrameViewer: React.FC<CameraFrameViewerProps> = ({
         pauseDeadlineRef.current = Date.now() + AUTO_PAUSE_MS;
         errorCountRef.current = 0;
         lastOkRef.current = Date.now();
+        frameTimesRef.current = [];
+        setMeasuredFps(0);
         setActivityStale(false);
         setFresh(null);
         setPaused(false);
@@ -423,6 +454,16 @@ export const CameraFrameViewer: React.FC<CameraFrameViewerProps> = ({
                     )}
                 </View>
             )}
+            {/* Telemetría discreta: resolución y fps reales recibidos. */}
+            {loaded && !paused && (frameSize || measuredFps > 0) && (
+                <View style={styles.metaPill}>
+                    <Text style={styles.metaPillText}>
+                        {[frameSize, measuredFps > 0 ? `${measuredFps.toFixed(1)} fps` : null]
+                            .filter((p): p is string => p !== null)
+                            .join(' · ')}
+                    </Text>
+                </View>
+            )}
             {/* Pausa automática a los 2 min: velo sobre el último fotograma
                 (sigue reconociéndose la cámara) y el botón Reanudar. */}
             {paused && (
@@ -518,6 +559,22 @@ const styles = StyleSheet.create({
         color: '#ffffff',
         fontSize: 11,
         fontWeight: 'bold',
+    },
+    // Pastilla de telemetría (resolución · fps), discreta abajo a la derecha.
+    metaPill: {
+        position: 'absolute',
+        right: 8,
+        bottom: 8,
+        zIndex: 4,
+        backgroundColor: 'rgba(0, 0, 0, 0.55)',
+        borderRadius: 999,
+        paddingVertical: 2,
+        paddingHorizontal: 8,
+    },
+    metaPillText: {
+        color: 'rgba(255, 255, 255, 0.9)',
+        fontSize: 10,
+        fontWeight: '600',
     },
     // Overlay de pausa automática (por encima del badge: zIndex 5).
     pausedOverlay: {
