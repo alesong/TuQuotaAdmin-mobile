@@ -10,7 +10,7 @@ import {
 } from 'react-native';
 import { Colors } from '../constants/Colors';
 import { Config } from '../constants/Config';
-import { Pause, Play } from 'lucide-react-native';
+import { Maximize, Pause, Play } from 'lucide-react-native';
 
 interface CameraFrameViewerProps {
     /**
@@ -42,6 +42,10 @@ interface CameraFrameViewerProps {
      * respuesta suele salir en ~250 ms; 300 ms de pausa da ~2 fps.
      */
     intervalMs?: number;
+    /** Llena el contenedor padre (modal de pantalla completa). */
+    expanded?: boolean;
+    /** Muestra el botón de pantalla completa (la pantalla reubica el visor). */
+    onFullscreen?: () => void;
 }
 
 /** Fotogramas fallidos seguidos antes de pasar al estado de error. */
@@ -66,6 +70,8 @@ export const CameraFrameViewer: React.FC<CameraFrameViewerProps> = ({
     errorDetail,
     onRefresh,
     intervalMs = 300,
+    expanded = false,
+    onFullscreen,
 }) => {
     // Doble buffer: capa 0 y capa 1 se alternan. La capa "front" muestra el
     // último fotograma bueno y NO se toca; la nueva carga en la capa de
@@ -405,13 +411,13 @@ export const CameraFrameViewer: React.FC<CameraFrameViewerProps> = ({
     }
 
     return (
-        <View style={styles.container}>
+        <View style={[styles.container, expanded && styles.containerExpanded]}>
             {/* Captura previa como capa de fondo (zIndex bajo las capas del
                 doble buffer): se ve hasta que el primer fotograma la tapa. */}
             {snapshotUri ? (
                 <Image
                     source={{ uri: snapshotUri }}
-                    style={[styles.image, { zIndex: 0 }]}
+                    style={[styles.image, expanded && styles.imageExpanded, { zIndex: 0 }]}
                     resizeMode="contain"
                     accessibilityLabel={`${serviceName} (captura)`}
                     onError={() => setSnapshotFailed(true)}
@@ -422,7 +428,7 @@ export const CameraFrameViewer: React.FC<CameraFrameViewerProps> = ({
                     <Image
                         key={idx}
                         source={{ uri }}
-                        style={[styles.image, { zIndex: frontIdx === idx ? 2 : 1 }]}
+                        style={[styles.image, expanded && styles.imageExpanded, { zIndex: frontIdx === idx ? 2 : 1 }]}
                         resizeMode="contain"
                         accessibilityLabel={serviceName}
                         onLoad={() => onLoadRef.current(idx)}
@@ -450,6 +456,27 @@ export const CameraFrameViewer: React.FC<CameraFrameViewerProps> = ({
                             accessibilityLabel="Reiniciar transmisión"
                         >
                             <Text style={styles.badgeRestartText}>Reiniciar</Text>
+                        </TouchableOpacity>
+                    )}
+                </View>
+            )}
+            {/* Controles: pausar y pantalla completa (arriba a la derecha). */}
+            {loaded && !paused && (
+                <View style={styles.controlsRow}>
+                    <TouchableOpacity
+                        style={styles.controlBtn}
+                        onPress={() => setPaused(true)}
+                        accessibilityLabel="Pausar transmisión"
+                    >
+                        <Pause size={14} color="#ffffff" />
+                    </TouchableOpacity>
+                    {!!onFullscreen && (
+                        <TouchableOpacity
+                            style={styles.controlBtn}
+                            onPress={onFullscreen}
+                            accessibilityLabel="Ver en pantalla completa"
+                        >
+                            <Maximize size={14} color="#ffffff" />
                         </TouchableOpacity>
                     )}
                 </View>
@@ -503,6 +530,30 @@ const styles = StyleSheet.create({
         left: 0,
         width: '100%',
         height: 200,
+    },
+    containerExpanded: {
+        flex: 1,
+        minHeight: undefined,
+    },
+    imageExpanded: {
+        height: '100%',
+    },
+    // Controles de reproducción (pausar / pantalla completa).
+    controlsRow: {
+        position: 'absolute',
+        top: 8,
+        right: 8,
+        zIndex: 4,
+        flexDirection: 'row',
+        gap: 6,
+    },
+    controlBtn: {
+        width: 28,
+        height: 28,
+        borderRadius: 14,
+        backgroundColor: 'rgba(0, 0, 0, 0.55)',
+        justifyContent: 'center',
+        alignItems: 'center',
     },
     loadingOverlay: {
         ...StyleSheet.absoluteFill,

@@ -37,6 +37,7 @@ import {
     BellRing,
     X,
     Play,
+    ChevronDown,
     Check,
     CheckCheck,
     ChevronRight,
@@ -301,6 +302,12 @@ export const MyServicesScreen = ({ navigation, route }: any) => {
     >({});
     const [clipPlayer, setClipPlayer] = useState<{ serviceId: string; clipUrl: string } | null>(null);
     const requestedClipsRef = useRef<Set<string>>(new Set());
+    // Colapsable de clips por cámara (se cargan al desplegar, no al ver el vivo).
+    const [clipsExpanded, setClipsExpanded] = useState<Record<string, boolean>>({});
+    const [clipsLoading, setClipsLoading] = useState<Record<string, boolean>>({});
+    // Cámara en pantalla completa (el visor se reubica al modal: una sola
+    // instancia haciendo polling, sin doble consumo).
+    const [fullscreenCameraId, setFullscreenCameraId] = useState<string | null>(null);
 
     const fetchMyServicesRef = useRef<((options?: { notifyOnError?: boolean }) => Promise<void>) | null>(null);
     const fetchVehiclesRef = useRef<(() => Promise<void>) | null>(null);
@@ -806,12 +813,13 @@ export const MyServicesScreen = ({ navigation, route }: any) => {
             });
     }, [activeSection, services, token]);
 
-    // Galería de clips: una sola carga por sesión de visionado (sólo JSON;
-    // el video sale directo de Cloudinary al tocar la miniatura).
+    // Galería de clips: se cargan al desplegar "Clips de video" (una sola vez;
+    // sólo JSON; el video sale directo de Cloudinary al tocar la miniatura).
     const fetchCameraClips = async (serviceId: string) => {
+        setClipsLoading(prev => ({ ...prev, [serviceId]: true }));
         try {
             const response = await fetch(
-                `${API_URL}/resident-services/cameras-center/clips/${serviceId}?limit=12`,
+                `${API_URL}/resident-services/cameras-center/clips/${serviceId}?limit=24`,
                 { headers: { 'Authorization': `Bearer ${token}` } }
             );
             const data = response.ok ? await response.json().catch(() => null) : null;
@@ -821,19 +829,65 @@ export const MyServicesScreen = ({ navigation, route }: any) => {
             }));
         } catch {
             setCameraClips(prev => ({ ...prev, [serviceId]: [] }));
+        } finally {
+            setClipsLoading(prev => ({ ...prev, [serviceId]: false }));
         }
     };
 
-    useEffect(() => {
-        if (activeSection !== 'cameras' || !token) return;
-        Object.keys(cameraStreams).forEach(id => {
-            if (cameraStreams[id] && !requestedClipsRef.current.has(id)) {
-                requestedClipsRef.current.add(id);
-                void fetchCameraClips(id);
-            }
+    const toggleClips = (serviceId: string) => {
+        const willOpen = !clipsExpanded[serviceId];
+        setClipsExpanded(prev => ({ ...prev, [serviceId]: willOpen }));
+        if (willOpen && !requestedClipsRef.current.has(serviceId)) {
+            requestedClipsRef.current.add(serviceId);
+            void fetchCameraClips(serviceId);
+        }
+    };
+
+    const groupClipsByDay = (
+        clips: Array<{ id: string; at: number; createdAt: string; score: number | null; snapshotUrl: string | null; clipUrl: string }>
+    ) => {
+        const groups: { day: string; items: typeof clips }[] = [];
+        const byDay = new Map<string, typeof clips>();
+        clips.forEach(c => {
+            const day = new Date(c.at).toLocaleDateString('es-CO', {
+                day: '2-digit',
+                month: '2-digit',
+                year: 'numeric',
+            });
+            const arr = byDay.get(day);
+            if (arr) arr.push(c);
+            else byDay.set(day, [c]);
         });
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [activeSection, cameraStreams, token]);
+        byDay.forEach((items, day) => groups.push({ day, items }));
+        return groups;
+    };
+
+    // Visor según tipo de stream (misma instancia aquí o en el modal de
+    // pantalla completa, nunca duplicada).
+    const renderCameraViewer = (s: any, snapUri: string | null, expanded = false, onFullscreen?: () => void) => {
+        if (cameraStreamTypes[s.serviceId] === 'mjpeg') {
+            return (
+                <CameraFrameViewer
+                    frameUrl={cameraFrameUrls[s.serviceId] || cameraStreams[s.serviceId]!}
+                    snapshotUrl={snapUri}
+                    token={token || ''}
+                    serviceName={s.serviceName}
+                    errorDetail={cameraStreamErrors[s.serviceId] || null}
+                    onRefresh={() => fetchCameraStream(s.serviceId, true)}
+                    expanded={expanded}
+                    onFullscreen={onFullscreen}
+                />
+            );
+        }
+        return (
+            <CameraStreamViewer
+                streamUrl={cameraStreams[s.serviceId]!}
+                serviceName={s.serviceName}
+                errorDetail={cameraStreamErrors[s.serviceId] || null}
+                onRefresh={() => fetchCameraStream(s.serviceId, true)}
+            />
+        );
+    };
 
     // Generar QR image cuando cambia qrCode
     useEffect(() => {
@@ -1503,23 +1557,9 @@ export const MyServicesScreen = ({ navigation, route }: any) => {
                                                         </View>
                                                     )
                                                 ) : cameraStreams[s.serviceId] ? (
-                                                    cameraStreamTypes[s.serviceId] === 'mjpeg' ? (
-                                                        <CameraFrameViewer
-                                                            frameUrl={cameraFrameUrls[s.serviceId] || cameraStreams[s.serviceId]!}
-                                                            snapshotUrl={snapUri}
-                                                            token={token || ''}
-                                                            serviceName={s.serviceName}
-                                                            errorDetail={cameraStreamErrors[s.serviceId] || null}
-                                                            onRefresh={() => fetchCameraStream(s.serviceId, true)}
-                                                        />
-                                                    ) : (
-                                                        <CameraStreamViewer
-                                                            streamUrl={cameraStreams[s.serviceId]!}
-                                                            serviceName={s.serviceName}
-                                                            errorDetail={cameraStreamErrors[s.serviceId] || null}
-                                                            onRefresh={() => fetchCameraStream(s.serviceId, true)}
-                                                        />
-                                                    )
+                                                    fullscreenCameraId === s.serviceId
+                                                        ? null
+                                                        : renderCameraViewer(s, snapUri, false, () => setFullscreenCameraId(s.serviceId))
                                                 ) : cameraStreamErrors[s.serviceId] ? (
                                                     <View style={styles.cameraErrorContainer}>
                                                         <AlertCircle size={26} color={Colors.error} style={{ marginBottom: 6 }} />
@@ -1534,9 +1574,7 @@ export const MyServicesScreen = ({ navigation, route }: any) => {
                                                     </View>
                                                 ) : (
                                                     <>
-                                                        {snapUri && (
-                                                            // Captura previa: reconoce la cámara ANTES de iniciar la
-                                                            // transmisión, en el mismo marco de 200 px del visor.
+                                                        {snapUri ? (
                                                             <View style={styles.cameraSnapshotContainer}>
                                                                 <Image
                                                                     source={{ uri: snapUri }}
@@ -1545,14 +1583,24 @@ export const MyServicesScreen = ({ navigation, route }: any) => {
                                                                     accessibilityLabel={`Captura de ${s.serviceName}`}
                                                                     onError={() => setSnapshotErrors(prev => ({ ...prev, [s.serviceId]: true }))}
                                                                 />
+                                                                <TouchableOpacity
+                                                                    style={styles.snapshotPlayBtn}
+                                                                    onPress={() => fetchCameraStream(s.serviceId)}
+                                                                    accessibilityLabel="Ver transmisión en vivo"
+                                                                >
+                                                                    <View style={styles.snapshotPlayCircle}>
+                                                                        <Play size={28} color="#ffffff" />
+                                                                    </View>
+                                                                </TouchableOpacity>
                                                             </View>
+                                                        ) : (
+                                                            <TouchableOpacity
+                                                                style={styles.cameraActivateBtn}
+                                                                onPress={() => fetchCameraStream(s.serviceId)}
+                                                            >
+                                                                <Text style={styles.cameraActivateBtnText}>Ver transmisión en vivo</Text>
+                                                            </TouchableOpacity>
                                                         )}
-                                                        <TouchableOpacity
-                                                            style={styles.cameraActivateBtn}
-                                                            onPress={() => fetchCameraStream(s.serviceId)}
-                                                        >
-                                                            <Text style={styles.cameraActivateBtnText}>Ver transmisión en vivo</Text>
-                                                        </TouchableOpacity>
                                                     </>
                                                 )}
                                                 {(s.provider === 'Ezviz' || s.provider === 'EZVIZ') && !!s.deviceSerial && (
@@ -1564,11 +1612,41 @@ export const MyServicesScreen = ({ navigation, route }: any) => {
                                                         <Text style={styles.openEzvizBtnText}>Abrir en App EZVIZ</Text>
                                                     </TouchableOpacity>
                                                 )}
-                                                {cameraStreams[s.serviceId] && (cameraClips[s.serviceId]?.length ?? 0) > 0 && (
+                                                {s.provider === 'CamerasCenter' && s.status === 'ACTIVE' && (
                                                     <View style={styles.clipsBlock}>
-                                                        <Text style={styles.clipsLabel}>Clips recientes</Text>
-                                                        <View style={styles.clipsGrid}>
-                                                            {cameraClips[s.serviceId].map(clip => (
+                                                        <TouchableOpacity
+                                                            style={styles.clipsToggle}
+                                                            onPress={() => toggleClips(s.serviceId)}
+                                                            accessibilityLabel="Clips de video"
+                                                        >
+                                                            <Play size={14} color="#94a3b8" />
+                                                            <Text style={styles.clipsToggleText}>
+                                                                Clips de video{(cameraClips[s.serviceId]?.length ?? 0) > 0 ? ` (${cameraClips[s.serviceId].length})` : ''}
+                                                            </Text>
+                                                            <ChevronDown
+                                                                size={14}
+                                                                color="#94a3b8"
+                                                                style={{
+                                                                    marginLeft: 'auto',
+                                                                    transform: [{ rotate: clipsExpanded[s.serviceId] ? '180deg' : '0deg' }],
+                                                                }}
+                                                            />
+                                                        </TouchableOpacity>
+                                                        {clipsExpanded[s.serviceId] && (
+                                                            clipsLoading[s.serviceId] ? (
+                                                                <View style={styles.clipsLoadingRow}>
+                                                                    <ActivityIndicator size="small" color={Colors.primary} />
+                                                                    <Text style={styles.clipsLoadingText}>Cargando clips...</Text>
+                                                                </View>
+                                                            ) : (cameraClips[s.serviceId]?.length ?? 0) === 0 ? (
+                                                                <Text style={styles.clipsEmptyText}>No hay clips recientes.</Text>
+                                                            ) : (
+                                                                <ScrollView style={styles.clipsScroll} nestedScrollEnabled>
+                                                                    {groupClipsByDay(cameraClips[s.serviceId]).map(g => (
+                                                                        <View key={g.day}>
+                                                                            <Text style={styles.clipsDayHeader}>{g.day}</Text>
+                                                                            <View style={styles.clipsGrid}>
+                                                                                {g.items.map(clip => (
                                                                 <TouchableOpacity
                                                                     key={clip.id}
                                                                     style={styles.clipThumb}
@@ -1598,9 +1676,40 @@ export const MyServicesScreen = ({ navigation, route }: any) => {
                                                                         })}
                                                                     </Text>
                                                                 </TouchableOpacity>
-                                                            ))}
-                                                        </View>
+                                                                                ))}
+                                                                            </View>
+                                                                        </View>
+                                                                    ))}
+                                                                </ScrollView>
+                                                            )
+                                                        )}
                                                     </View>
+                                                )}
+                                                {fullscreenCameraId === s.serviceId && (
+                                                    <Modal
+                                                        visible
+                                                        transparent
+                                                        animationType="fade"
+                                                        onRequestClose={() => setFullscreenCameraId(null)}
+                                                    >
+                                                        <View style={styles.fsBackdrop}>
+                                                            <View style={styles.fsHeader}>
+                                                                <Text style={styles.fsTitle} numberOfLines={1}>
+                                                                    {s.serviceName}
+                                                                </Text>
+                                                                <TouchableOpacity
+                                                                    style={styles.fsClose}
+                                                                    onPress={() => setFullscreenCameraId(null)}
+                                                                    accessibilityLabel="Salir de pantalla completa"
+                                                                >
+                                                                    <X size={18} color="#ffffff" />
+                                                                </TouchableOpacity>
+                                                            </View>
+                                                            <View style={styles.fsBody}>
+                                                                {renderCameraViewer(s, snapUri, true)}
+                                                            </View>
+                                                        </View>
+                                                    </Modal>
                                                 )}
                                                 {clipPlayer && clipPlayer.serviceId === s.serviceId && (
                                                     <Modal
@@ -2682,11 +2791,98 @@ const styles = StyleSheet.create({
     clipsBlock: {
         marginTop: 10,
     },
+    // Botón play centrado sobre la captura (estilo reproductor de video).
+    snapshotPlayBtn: {
+        ...StyleSheet.absoluteFill,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    snapshotPlayCircle: {
+        width: 64,
+        height: 64,
+        borderRadius: 32,
+        backgroundColor: 'rgba(0,0,0,0.55)',
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
     clipsLabel: {
         color: '#cbd5e1',
         fontSize: 12,
         fontWeight: 'bold',
         marginBottom: 6,
+    },
+    // Fila colapsable "Clips de video" (carga al desplegar).
+    clipsToggle: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+        paddingVertical: 9,
+        paddingHorizontal: 10,
+        borderRadius: 8,
+        borderWidth: 1,
+        borderColor: '#1e293b',
+        backgroundColor: '#0f172a',
+    },
+    clipsToggleText: {
+        color: '#e2e8f0',
+        fontSize: 13,
+        fontWeight: 'bold',
+    },
+    clipsLoadingRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+        marginTop: 8,
+    },
+    clipsLoadingText: {
+        color: '#94a3b8',
+        fontSize: 12,
+    },
+    clipsEmptyText: {
+        color: '#94a3b8',
+        fontSize: 12,
+        marginTop: 8,
+    },
+    clipsScroll: {
+        maxHeight: 320,
+        marginTop: 8,
+    },
+    clipsDayHeader: {
+        color: '#94a3b8',
+        fontSize: 11,
+        fontWeight: 'bold',
+        marginVertical: 6,
+    },
+    // Pantalla completa del vivo (modal con el mismo visor reubicado).
+    fsBackdrop: {
+        flex: 1,
+        backgroundColor: '#000000',
+        padding: 16,
+        justifyContent: 'center',
+    },
+    fsHeader: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        marginBottom: 10,
+    },
+    fsTitle: {
+        color: '#ffffff',
+        fontSize: 15,
+        fontWeight: 'bold',
+        flex: 1,
+        marginRight: 10,
+    },
+    fsClose: {
+        width: 36,
+        height: 36,
+        borderRadius: 18,
+        backgroundColor: 'rgba(255,255,255,0.15)',
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    fsBody: {
+        flex: 1,
     },
     clipsGrid: {
         flexDirection: 'row',
