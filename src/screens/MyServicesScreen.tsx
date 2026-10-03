@@ -297,6 +297,13 @@ export const MyServicesScreen = ({ navigation, route }: any) => {
     // al pedirla) y puede ser vieja; a los 8 s se repite (cadena caliente) y
     // luego cada 60 s mientras no se mire el vivo. Cada tick son ~9 KB.
     const [snapshotNonce, setSnapshotNonce] = useState(0);
+    // Última captura CARGADA por cámara (doble buffer): la visible no se
+    // cambia hasta que la nueva terminó de cargar → nunca hay flash negro.
+    const [readySnapUris, setReadySnapUris] = useState<Record<string, string>>({});
+    const markSnapshotReady = (serviceId: string, uri: string | null) => {
+        if (!uri) return;
+        setReadySnapUris(prev => (prev[serviceId] === undefined ? { ...prev, [serviceId]: uri } : prev));
+    };
     // Clips recientes por cámara (galería bajo el vivo): sólo metadatos desde
     // la API; el MP4 y la miniatura salen directo de Cloudinary (cero video
     // por Render). Se piden una vez por sesión de visionado.
@@ -809,7 +816,9 @@ export const MyServicesScreen = ({ navigation, route }: any) => {
                             [s.serviceId]: data?.streamUrl ? (data?.frameUrl || null) : null,
                         }));
                     } catch {
-                        // Fallo de red: se permite reintentar en la próxima entrada.
+                        // Fallo de red: se marca nulo (la tarjeta usa el camino
+                        // alternativo) y se permite reintentar en la próxima entrada.
+                        setCameraFrameUrls(prev => ({ ...prev, [s.serviceId]: null }));
                         requestedContractsRef.current.delete(s.serviceId);
                     }
                 })();
@@ -886,7 +895,7 @@ export const MyServicesScreen = ({ navigation, route }: any) => {
             return (
                 <CameraFrameViewer
                     frameUrl={cameraFrameUrls[s.serviceId] || cameraStreams[s.serviceId]!}
-                    snapshotUrl={snapUri}
+                    snapshotUrl={readySnapUris[s.serviceId] ?? snapUri}
                     token={token || ''}
                     serviceName={s.serviceName}
                     errorDetail={cameraStreamErrors[s.serviceId] || null}
@@ -1533,6 +1542,13 @@ export const MyServicesScreen = ({ navigation, route }: any) => {
                                 const snapUri = snapPath
                                     ? `${API_URL.replace(/\/+$/, '')}${snapPath}?token=${encodeURIComponent(token || '')}&sn=${snapshotNonce}`
                                     : null;
+                                // Contrato aún sin resolver (CC + ACTIVE): esqueleto del
+                                // tamaño final en vez del botón viejo (sin saltos).
+                                const ccPending =
+                                    s.provider === 'CamerasCenter' &&
+                                    s.status === 'ACTIVE' &&
+                                    cameraFrameUrls[s.serviceId] === undefined;
+                                const shownSnapUri = readySnapUris[s.serviceId] ?? snapUri;
                                 return (
                                 <View key={s.serviceId} style={styles.serviceCard}>
                                     <View style={styles.cardHeader}>
@@ -1548,7 +1564,27 @@ export const MyServicesScreen = ({ navigation, route }: any) => {
                                     <View style={styles.cardBody}>
                                         {s.status === 'ACTIVE' ? (
                                             <>
-                                                {s.streamUrl ? (
+                                                {snapUri && snapUri !== readySnapUris[s.serviceId] && (
+                                                    <Image
+                                                        source={{ uri: snapUri }}
+                                                        style={{ width: 1, height: 1, opacity: 0 }}
+                                                        onLoad={() =>
+                                                            setReadySnapUris(prev =>
+                                                                prev[s.serviceId] === snapUri
+                                                                    ? prev
+                                                                    : { ...prev, [s.serviceId]: snapUri }
+                                                            )
+                                                        }
+                                                    />
+                                                )}
+                                                {ccPending ? (
+                                                    <View style={styles.cameraSnapshotContainer}>
+                                                        <View style={styles.cameraSnapshotOverlay}>
+                                                            <ActivityIndicator size="small" color="#ffffff" />
+                                                            <Text style={styles.cameraSnapshotOverlayText}>Cargando cámara...</Text>
+                                                        </View>
+                                                    </View>
+                                                ) : s.streamUrl ? (
                                                     <CameraStreamViewer streamUrl={s.streamUrl} serviceName={s.serviceName} />
                                                 ) : loadingStreams[s.serviceId] ? (
                                                     snapUri ? (
@@ -1556,10 +1592,11 @@ export const MyServicesScreen = ({ navigation, route }: any) => {
                                                         // superpone el spinner, así no hay salto de tamaño al iniciar.
                                                         <View style={styles.cameraSnapshotContainer}>
                                                             <Image
-                                                                source={{ uri: snapUri }}
+                                                                source={{ uri: shownSnapUri }}
                                                                 style={styles.cameraSnapshotImage}
                                                                 resizeMode="contain"
                                                                 accessibilityLabel={`Captura de ${s.serviceName}`}
+                                                                onLoad={() => markSnapshotReady(s.serviceId, snapUri)}
                                                                 onError={() => setSnapshotErrors(prev => ({ ...prev, [s.serviceId]: true }))}
                                                             />
                                                             <View style={styles.cameraSnapshotOverlay}>
@@ -1594,10 +1631,11 @@ export const MyServicesScreen = ({ navigation, route }: any) => {
                                                         {snapUri ? (
                                                             <View style={styles.cameraSnapshotContainer}>
                                                                 <Image
-                                                                    source={{ uri: snapUri }}
+                                                                    source={{ uri: shownSnapUri }}
                                                                     style={styles.cameraSnapshotImage}
                                                                     resizeMode="contain"
                                                                     accessibilityLabel={`Captura de ${s.serviceName}`}
+                                                                    onLoad={() => markSnapshotReady(s.serviceId, snapUri)}
                                                                     onError={() => setSnapshotErrors(prev => ({ ...prev, [s.serviceId]: true }))}
                                                                 />
                                                                 <TouchableOpacity
@@ -1610,14 +1648,14 @@ export const MyServicesScreen = ({ navigation, route }: any) => {
                                                                     </View>
                                                                 </TouchableOpacity>
                                                             </View>
-                                                        ) : (
+                                                        ) : !ccPending ? (
                                                             <TouchableOpacity
                                                                 style={styles.cameraActivateBtn}
                                                                 onPress={() => fetchCameraStream(s.serviceId)}
                                                             >
                                                                 <Text style={styles.cameraActivateBtnText}>Ver transmisión en vivo</Text>
                                                             </TouchableOpacity>
-                                                        )}
+                                                        ) : null}
                                                     </>
                                                 )}
                                                 {(s.provider === 'Ezviz' || s.provider === 'EZVIZ') && !!s.deviceSerial && (
