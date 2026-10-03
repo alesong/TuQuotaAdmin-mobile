@@ -37,7 +37,6 @@ import {
     BellRing,
     X,
     Play,
-    ChevronDown,
     Check,
     CheckCheck,
     ChevronRight,
@@ -1615,22 +1614,17 @@ export const MyServicesScreen = ({ navigation, route }: any) => {
                                                 {s.provider === 'CamerasCenter' && s.status === 'ACTIVE' && (
                                                     <View style={styles.clipsBlock}>
                                                         <TouchableOpacity
-                                                            style={styles.clipsToggle}
+                                                            style={[styles.doorbellHistoryToggle, { marginTop: 0 }]}
                                                             onPress={() => toggleClips(s.serviceId)}
                                                             accessibilityLabel="Clips de video"
                                                         >
-                                                            <Play size={14} color="#94a3b8" />
-                                                            <Text style={styles.clipsToggleText}>
+                                                            <Play size={16} color={Colors.primary} />
+                                                            <Text style={styles.doorbellHistoryToggleText}>
                                                                 Clips de video{(cameraClips[s.serviceId]?.length ?? 0) > 0 ? ` (${cameraClips[s.serviceId].length})` : ''}
                                                             </Text>
-                                                            <ChevronDown
-                                                                size={14}
-                                                                color="#94a3b8"
-                                                                style={{
-                                                                    marginLeft: 'auto',
-                                                                    transform: [{ rotate: clipsExpanded[s.serviceId] ? '180deg' : '0deg' }],
-                                                                }}
-                                                            />
+                                                            <Text style={styles.doorbellHistoryChevron}>
+                                                                {clipsExpanded[s.serviceId] ? '▾' : '▸'}
+                                                            </Text>
                                                         </TouchableOpacity>
                                                         {clipsExpanded[s.serviceId] && (
                                                             clipsLoading[s.serviceId] ? (
