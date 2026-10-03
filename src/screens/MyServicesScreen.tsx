@@ -293,6 +293,10 @@ export const MyServicesScreen = ({ navigation, route }: any) => {
     // Contratos camera-stream ya pedidos al abrir la sección de cámaras:
     // evitan repetir la precarga de la captura previa en cada render.
     const requestedContractsRef = useRef<Set<string>>(new Set());
+    // Captura reciente: la primera sale con la cadena fría (el agente arranca
+    // al pedirla) y puede ser vieja; a los 8 s se repite (cadena caliente) y
+    // luego cada 60 s mientras no se mire el vivo. Cada tick son ~9 KB.
+    const [snapshotNonce, setSnapshotNonce] = useState(0);
     // Clips recientes por cámara (galería bajo el vivo): sólo metadatos desde
     // la API; el MP4 y la miniatura salen directo de Cloudinary (cero video
     // por Render). Se piden una vez por sesión de visionado.
@@ -811,6 +815,20 @@ export const MyServicesScreen = ({ navigation, route }: any) => {
                 })();
             });
     }, [activeSection, services, token]);
+
+    // Captura reciente (ver estado snapshotNonce): al mostrar la sección se
+    // pide la captura; a los 8 s se repite con la cadena ya caliente y luego
+    // cada 60 s. Nada mientras se mira el vivo (la captura queda tapada).
+    useEffect(() => {
+        if (activeSection !== 'cameras' || !token) return;
+        if (Object.values(cameraStreams).some(Boolean)) return;
+        const t1 = setTimeout(() => setSnapshotNonce(n => n + 1), 8000);
+        const iv = setInterval(() => setSnapshotNonce(n => n + 1), 60000);
+        return () => {
+            clearTimeout(t1);
+            clearInterval(iv);
+        };
+    }, [activeSection, token, cameraStreams]);
 
     // Galería de clips: se cargan al desplegar "Clips de video" (una sola vez;
     // sólo JSON; el video sale directo de Cloudinary al tocar la miniatura).
@@ -1513,7 +1531,7 @@ export const MyServicesScreen = ({ navigation, route }: any) => {
                             services.filter(s => s.category === 'CAMERAS').map(s => {
                                 const snapPath = !snapshotErrors[s.serviceId] ? cameraFrameUrls[s.serviceId] : null;
                                 const snapUri = snapPath
-                                    ? `${API_URL.replace(/\/+$/, '')}${snapPath}?token=${encodeURIComponent(token || '')}`
+                                    ? `${API_URL.replace(/\/+$/, '')}${snapPath}?token=${encodeURIComponent(token || '')}&sn=${snapshotNonce}`
                                     : null;
                                 return (
                                 <View key={s.serviceId} style={styles.serviceCard}>
