@@ -502,6 +502,8 @@ export const MyServicesScreen = ({ navigation, route }: any) => {
     // Actualiza periódicamente la "última foto" del timbre que se muestra en la
     // tarjeta, sin recargar toda la pantalla. Consulta el endpoint liviano
     // last-snapshot (no re-descarga todo my-services).
+    // Fase 2: también apaga el estado "Obteniendo foto…" al llegar la imagen.
+    const { photoPending, clearPhotoPending } = useDoorbell();
     const refreshDoorbellSnapshot = useCallback(async () => {
         if (!token) return;
         try {
@@ -526,6 +528,8 @@ export const MyServicesScreen = ({ navigation, route }: any) => {
                         (!data.serviceId || s.serviceId === data.serviceId)
                 );
                 if (!current || current.lastSnapshot === data.imageUrl) return prev;
+                // Fase 2: llegó la foto diferida del último timbre.
+                clearPhotoPending();
                 return prev.map(s =>
                     s.serviceId === current.serviceId
                         ? { ...s, lastSnapshot: data.imageUrl, lastSnapshotAt: data.createdAt }
@@ -535,7 +539,7 @@ export const MyServicesScreen = ({ navigation, route }: any) => {
         } catch (error: any) {
             console.warn('Error refreshing doorbell snapshot:', error);
         }
-    }, [token, API_URL]);
+    }, [token, API_URL, clearPhotoPending]);
     const refreshDoorbellSnapshotRef = useRef<(() => Promise<void>) | null>(null);
     refreshDoorbellSnapshotRef.current = refreshDoorbellSnapshot;
 
@@ -2259,11 +2263,27 @@ export const MyServicesScreen = ({ navigation, route }: any) => {
                                                                                 </Text>
                                                                             </View>
                                                                         )}
+                                                                        {photoPending && (
+                                                                            <View style={styles.doorbellSnapshotPendingBadge}>
+                                                                                <ActivityIndicator size="small" color="#fff" />
+                                                                                <Text style={styles.doorbellSnapshotPendingText}>
+                                                                                    Obteniendo foto…
+                                                                                </Text>
+                                                                            </View>
+                                                                        )}
                                                                     </View>
                                                                 ) : (
                                                                     <View style={[styles.doorbellSnapshotWrap, styles.doorbellSnapshotEmpty]}>
                                                                         <Video size={22} color={Colors.muted} />
                                                                         <Text style={styles.doorbellSnapshotEmptyText}>Sin foto del timbre aún</Text>
+                                                                        {photoPending && (
+                                                                            <View style={styles.doorbellSnapshotPendingBadgeInline}>
+                                                                                <ActivityIndicator size="small" color={Colors.primary} />
+                                                                                <Text style={styles.doorbellSnapshotPendingInlineText}>
+                                                                                    Obteniendo foto…
+                                                                                </Text>
+                                                                            </View>
+                                                                        )}
                                                                     </View>
                                                                 );
                                                             })()}
@@ -3280,6 +3300,34 @@ const styles = StyleSheet.create({
         fontSize: 11,
         fontWeight: '600',
         color: '#fff',
+    },
+    doorbellSnapshotPendingBadge: {
+        position: 'absolute',
+        top: 8,
+        left: 8,
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 4,
+        backgroundColor: 'rgba(0,0,0,0.65)',
+        borderRadius: 6,
+        paddingHorizontal: 8,
+        paddingVertical: 4,
+    },
+    doorbellSnapshotPendingText: {
+        fontSize: 11,
+        fontWeight: '600',
+        color: '#fff',
+    },
+    doorbellSnapshotPendingBadgeInline: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+        marginTop: 6,
+    },
+    doorbellSnapshotPendingInlineText: {
+        fontSize: 12,
+        fontWeight: '600',
+        color: Colors.primary,
     },
     doorbellSnapshotImg: {
         width: '100%',

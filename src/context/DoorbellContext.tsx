@@ -1,5 +1,5 @@
 import React, { createContext, useState, useEffect, useCallback, useRef, useContext } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Platform, Image } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Platform, Image, ActivityIndicator } from 'react-native';
 import { Bell, X } from 'lucide-react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Config } from '../constants/Config';
@@ -30,8 +30,10 @@ interface DoorbellContextType {
     doorbellProvider: string | null;
     preferences: DoorbellPreferences;
     lastRingAt: number | null;
+    photoPending: boolean;
     dismissAlert: () => void;
     triggerRing: () => void;
+    clearPhotoPending: () => void;
     updatePreferences: (prefs: DoorbellPreferences) => Promise<void>;
 }
 
@@ -42,8 +44,10 @@ const DoorbellContext = createContext<DoorbellContextType>({
   doorbellProvider: null,
   preferences: DEFAULT_PREFS,
   lastRingAt: null,
+  photoPending: false,
   triggerRing: () => {},
   dismissAlert: () => {},
+  clearPhotoPending: () => {},
   updatePreferences: async () => {},
 });
 
@@ -77,6 +81,16 @@ export function DoorbellProvider({ children }: { children: React.ReactNode }) {
   const [showAlert, setShowAlert] = useState(false);
   const [lastSnapshot, setLastSnapshot] = useState<string | null>(null);
   const [lastRingAt, setLastRingAt] = useState<number | null>(null);
+  // Fase 2: push recibido sin foto. Mientras está activo el banner muestra
+  // "Obteniendo foto…" en vez de una foto anterior (stale). Se apaga al
+  // llegar la foto o a los 90 s (la foto pudo no generarse).
+  const [photoPending, setPhotoPending] = useState(false);
+  const photoPendingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const clearPhotoPending = useCallback(() => {
+    if (photoPendingTimerRef.current) clearTimeout(photoPendingTimerRef.current);
+    photoPendingTimerRef.current = null;
+    setPhotoPending(false);
+  }, []);
   const [preferences, setPreferences] = useState<DoorbellPreferences>(DEFAULT_PREFS);
   const alertTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const prefsRef = useRef<DoorbellPreferences>(DEFAULT_PREFS);
@@ -133,7 +147,15 @@ export function DoorbellProvider({ children }: { children: React.ReactNode }) {
         if (timestamp && Date.now() - timestamp > DOORBELL_MAX_AGE_MS) return;
         const identifier = notification.request.identifier;
 
-        if (typeof data.image === 'string') setLastSnapshot(data.image);
+        if (typeof data.image === 'string') {
+          setLastSnapshot(data.image);
+          clearPhotoPending();
+        } else {
+          // Fase 2: aviso sin foto; la imagen llegará diferida (poll).
+          setPhotoPending(true);
+          if (photoPendingTimerRef.current) clearTimeout(photoPendingTimerRef.current);
+          photoPendingTimerRef.current = setTimeout(() => setPhotoPending(false), 90_000);
+        }
         setLastRingAt(Date.now());
         setShowAlert(true);
         if (prefsRef.current.enabled) {
@@ -157,6 +179,7 @@ export function DoorbellProvider({ children }: { children: React.ReactNode }) {
       subscription.remove();
       dismissTimers.forEach(t => clearTimeout(t));
       dismissTimers.clear();
+      if (photoPendingTimerRef.current) clearTimeout(photoPendingTimerRef.current);
     };
   }, []);
 
@@ -191,7 +214,7 @@ export function DoorbellProvider({ children }: { children: React.ReactNode }) {
 
   return (
     <DoorbellContext.Provider
-      value={{ connected: true, showAlert, doorbellServiceId, doorbellProvider, preferences, lastRingAt, triggerRing: handleRing, dismissAlert, updatePreferences }}
+      value={{ connected: true, showAlert, doorbellServiceId, doorbellProvider, preferences, lastRingAt, photoPending, triggerRing: handleRing, dismissAlert, clearPhotoPending, updatePreferences }}
     >
       {children}
       {showAlert && (
@@ -201,7 +224,12 @@ export function DoorbellProvider({ children }: { children: React.ReactNode }) {
           <TouchableOpacity onPress={dismissAlert} style={styles.closeBtn}>
             <X size={20} color="#fff" />
           </TouchableOpacity>
-          {lastSnapshot ? (
+          {photoPending ? (
+            <View style={styles.alertPending}>
+              <ActivityIndicator size="small" color="#fff" />
+              <Text style={styles.alertPendingText}>Obteniendo foto…</Text>
+            </View>
+          ) : lastSnapshot ? (
             <Image source={{ uri: lastSnapshot }} style={styles.alertImage} resizeMode="cover" />
           ) : null}
         </View>
@@ -239,6 +267,17 @@ const styles = StyleSheet.create({
     height: 220,
     borderRadius: 8,
     marginTop: 8,
+  },
+  alertPending: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 8,
+  },
+  alertPendingText: {
+    color: '#fff',
+    fontSize: 13,
+    fontWeight: '600',
   },
 });
 
