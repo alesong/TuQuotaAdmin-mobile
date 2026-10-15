@@ -83,6 +83,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setToken(null);
     };
 
+    // Telemetria de presencia (sistema de inactivos): best-effort, nunca
+    // afecta la sesion. El endpoint siempre responde 200.
+    useEffect(() => {
+        if (!token) return;
+        let cancelled = false;
+        const ping = () => {
+            api.post('/auth/heartbeat', {}).catch(() => {});
+        };
+        ping();
+        const id = setInterval(() => { if (!cancelled) ping(); }, 15 * 60 * 1000);
+        return () => { cancelled = true; clearInterval(id); };
+    }, [token]);
+
     const updateUser = async (userData: Partial<User>) => {
         setUser(prevUser => {
             if (!prevUser) return userData as User;

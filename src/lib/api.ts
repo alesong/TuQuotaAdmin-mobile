@@ -37,6 +37,8 @@ class Api {
             const token = this.tokenCache;
             const defaultHeaders: any = {
                 'Content-Type': 'application/json',
+                // Origen para la telemetria de actividad (sistema de inactivos)
+                'X-App-Source': 'mobile',
             };
 
             if (token) {
@@ -46,7 +48,7 @@ class Api {
             return { ...defaultHeaders, ...headers };
         } catch (error) {
             console.error('[Api] Error in getHeaders:', error);
-            return { 'Content-Type': 'application/json', ...headers };
+            return { 'Content-Type': 'application/json', 'X-App-Source': 'mobile', ...headers };
         }
     }
 
